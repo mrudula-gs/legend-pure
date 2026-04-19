@@ -16,30 +16,24 @@ package org.finos.legend.pure.m3.coreinstance;
 
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
-import org.eclipse.collections.api.factory.Stacks;
 import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.api.map.MutableMap;
-import org.eclipse.collections.api.set.MutableSet;
-import org.eclipse.collections.api.set.SetIterable;
-import org.eclipse.collections.api.stack.MutableStack;
 import org.eclipse.collections.impl.utility.Iterate;
 import org.finos.legend.pure.m4.ModelRepository;
 import org.finos.legend.pure.m4.coreinstance.AbstractCoreInstance;
 import org.finos.legend.pure.m4.coreinstance.CoreInstance;
+import org.finos.legend.pure.m4.coreinstance.CoreInstanceWithStandardPrinting;
 import org.finos.legend.pure.m4.coreinstance.SourceInformation;
 import org.finos.legend.pure.m4.coreinstance.indexing.IDConflictException;
 import org.finos.legend.pure.m4.coreinstance.indexing.IDIndex;
 import org.finos.legend.pure.m4.coreinstance.indexing.Index;
 import org.finos.legend.pure.m4.coreinstance.indexing.IndexSpecification;
-import org.finos.legend.pure.m4.exception.PureCompilationException;
-import org.finos.legend.pure.m4.exception.PureException;
-import org.finos.legend.pure.m4.tools.SafeAppendable;
 
 import java.util.Objects;
 
-public abstract class BaseCoreInstance extends AbstractCoreInstance
+public abstract class BaseCoreInstance extends AbstractCoreInstance implements CoreInstanceWithStandardPrinting
 {
     private final int internalSyntheticId;
 
@@ -196,85 +190,6 @@ public abstract class BaseCoreInstance extends AbstractCoreInstance
         return (values == null) ? Lists.immutable.empty() : values.getValuesByIndex(indexSpec, keyInIndex);
     }
 
-
-    //------------
-    // Validation
-    //------------
-
-    @Override
-    public void validate(MutableSet<CoreInstance> doneList) throws PureCompilationException
-    {
-        this.validate(doneList, Stacks.mutable.with(this));
-    }
-
-    private void validate(MutableSet<CoreInstance> doneList, MutableStack<BaseCoreInstance> stack) throws PureCompilationException
-    {
-        while (stack.notEmpty())
-        {
-            BaseCoreInstance element = stack.pop();
-            doneList.add(element);
-
-            if (element.getClassifier() == null)
-            {
-                SourceInformation foundSourceInformation = element.sourceInformation;
-                if (stack.size() > 1)
-                {
-                    SourceInformation cursorSourceInformation = element.sourceInformation;
-                    int cursor = stack.size() - 1;
-                    while (cursorSourceInformation == null && cursor >= 0)
-                    {
-                        cursorSourceInformation = stack.peekAt(cursor--).sourceInformation;
-                    }
-                    foundSourceInformation = stack.peekAt(cursor + 1).sourceInformation;
-                }
-                throw new PureCompilationException(foundSourceInformation, element.getName() + " has not been defined!");
-            }
-
-            try
-            {
-                element.getKeys().forEach(keyName ->
-                {
-                    ListIterable<String> realKey = element.getRealKeyByName(keyName);
-                    if (realKey == null)
-                    {
-                        throw new RuntimeException("No real key can be found for '" + keyName + "' in\n" + element.getName() + " (" + element + ")");
-                    }
-
-                    CoreInstance key = element.getKeyByName(keyName);
-                    if (key.getClassifier() == null)
-                    {
-                        throw new RuntimeException("'" + key.getName() + "' used in '" + element.name + "' has not been defined!\n" + element.print("   "));
-                    }
-
-                    ListIterable<? extends CoreInstance> values = element.getValueForMetaPropertyToMany(keyName);
-                    if (values != null)
-                    {
-                        values.forEach(childElement ->
-                        {
-                            if ((!doneList.contains(childElement) || (childElement.getClassifier() == null)) && (childElement instanceof BaseCoreInstance))
-                            {
-                                stack.push((BaseCoreInstance) childElement);
-                            }
-                        });
-                    }
-                });
-            }
-            catch (Exception e)
-            {
-                PureException pe = PureException.findPureException(e);
-                if (pe != null)
-                {
-                    throw pe;
-                }
-                throw e;
-            }
-        }
-    }
-
-    //-------
-    // Print
-    //-------
-
     @Override
     public String toString()
     {
@@ -284,148 +199,19 @@ public abstract class BaseCoreInstance extends AbstractCoreInstance
     @Override
     public void printFull(Appendable appendable, String tab)
     {
-        print(appendable, tab, true, true, DEFAULT_MAX_PRINT_DEPTH);
+        CoreInstanceWithStandardPrinting.super.printFull(appendable, tab);
     }
 
     @Override
     public void print(Appendable appendable, String tab, int max)
     {
-        print(appendable, tab, false, true, max);
+        CoreInstanceWithStandardPrinting.super.print(appendable, tab, max);
     }
 
     @Override
     public void printWithoutDebug(Appendable appendable, String tab, int max)
     {
-        print(appendable, tab, false, false, max);
-    }
-
-    private void print(Appendable appendable, String tab, boolean full, boolean addDebug, int max)
-    {
-        print(SafeAppendable.wrap(appendable), tab, Stacks.mutable.empty(), full, addDebug, max);
-    }
-
-    private void print(SafeAppendable appendable, String tab, MutableStack<CoreInstance> stack, boolean full, boolean addDebug, int max)
-    {
-        stack.push(this);
-        printNodeName(appendable.append(tab), this, full, addDebug);
-        printNodeName(appendable.append(" instance "), this.classifier, full, addDebug);
-        getKeys().toSortedList().forEach(key -> printProperty(appendable.append('\n'), key, this.getValueForMetaPropertyToMany(key), tab, stack, full, addDebug, max));
-        stack.pop();
-    }
-
-    private void printNodeName(SafeAppendable appendable, CoreInstance node, boolean full, boolean addDebug)
-    {
-        String name = node.getName();
-        if (full)
-        {
-            appendable.append(name).append('_').append(node.getSyntheticId());
-        }
-        else
-        {
-            appendable.append(ModelRepository.possiblyReplaceAnonymousId(name));
-        }
-
-        if (addDebug)
-        {
-            SourceInformation sourceInfo = node.getSourceInformation();
-            if (sourceInfo != null)
-            {
-                appendable.append('(').append(sourceInfo.getSourceId()).append(':')
-                        .append(sourceInfo.getStartLine()).append(',')
-                        .append(sourceInfo.getStartColumn()).append(',')
-                        .append(sourceInfo.getLine()).append(',')
-                        .append(sourceInfo.getColumn()).append(',')
-                        .append(sourceInfo.getEndLine()).append(',')
-                        .append(sourceInfo.getEndColumn()).append(')');
-            }
-        }
-    }
-
-    private void printProperty(SafeAppendable appendable, String propertyName, ListIterable<? extends CoreInstance> values, String tab, MutableStack<CoreInstance> stack, boolean full, boolean addDebug, int max)
-    {
-        appendable.append(tab).append("    ");
-        if (propertyName == null)
-        {
-            appendable.append("null:");
-        }
-        else
-        {
-            CoreInstance property = getKeyByName(propertyName);
-            CoreInstance propertyClassifier = property.getClassifier();
-
-            printNodeName(appendable, property, full, addDebug);
-            appendable.append('(');
-            if (propertyClassifier == null)
-            {
-                appendable.append("null");
-            }
-            else
-            {
-                printNodeName(appendable, propertyClassifier, full, addDebug);
-            }
-            appendable.append("):");
-        }
-
-        SetIterable<CoreInstance> excluded = this.repository.getExclusionSet();
-        values.forEach(value ->
-        {
-            appendable.append('\n');
-
-            if (value == null)
-            {
-                appendable.append(tab).append("        NULL");
-            }
-            else
-            {
-                // TODO remove reference to "package" property, which is an M3 thing
-                boolean excludeFlag = ((excluded != null) && (excluded.contains(value.getValueForMetaPropertyToOne("package")) || excluded.contains(value))) ||
-                        (this.repository.getTopLevel(value.getName()) != null);
-                if (full ? stack.contains(value) : (excludeFlag || (stack.size() > max) || stack.contains(value)))
-                {
-                    CoreInstance valueClassifier = value.getClassifier();
-
-                    appendable.append(tab).append("        ");
-                    printNodeName(appendable, value, full, addDebug);
-                    appendable.append(" instance ");
-                    if (valueClassifier == null)
-                    {
-                        appendable.append("null");
-                    }
-                    else
-                    {
-                        printNodeName(appendable, valueClassifier, full, addDebug);
-                        if (full)
-                        {
-                            appendable.append('\n').append(tab).append("            [...]");
-                        }
-                        else if (!excludeFlag && (stack.size() > max) && value.getKeys().notEmpty())
-                        {
-                            appendable.append('\n').append(tab).append("            [... >").append(max).append(']');
-                        }
-                    }
-                }
-                else
-                {
-                    String newTab = tab + "        ";
-                    if (value instanceof BaseCoreInstance)
-                    {
-                        ((BaseCoreInstance) value).print(appendable, newTab, stack, full, addDebug, max);
-                    }
-                    else if (full)
-                    {
-                        value.printFull(appendable, newTab);
-                    }
-                    else if (addDebug)
-                    {
-                        value.print(appendable, newTab, 0);
-                    }
-                    else
-                    {
-                        value.printWithoutDebug(appendable, newTab, 0);
-                    }
-                }
-            }
-        });
+        CoreInstanceWithStandardPrinting.super.printWithoutDebug(appendable, tab, max);
     }
 
     protected static <V extends CoreInstance> ToManyPropertyValues<V> newToManyPropertyValues()
@@ -744,19 +530,7 @@ public abstract class BaseCoreInstance extends AbstractCoreInstance
         {
             if (this.idIndexes != null)
             {
-                MutableList<IDIndex<?, V>> invalidIdIndexes = Lists.mutable.empty();
-                this.idIndexes.forEachValue(idIndex ->
-                {
-                    try
-                    {
-                        idIndex.add(value);
-                    }
-                    catch (IDConflictException e)
-                    {
-                        invalidIdIndexes.add(idIndex);
-                    }
-                });
-                invalidIdIndexes.forEach(invalidIdIndex -> this.idIndexes.remove(invalidIdIndex.getSpecification()));
+                this.idIndexes.removeIf((key, idIndex) -> !idIndex.tryAdd(value));
             }
             if (this.indexes != null)
             {
@@ -768,19 +542,7 @@ public abstract class BaseCoreInstance extends AbstractCoreInstance
         {
             if (this.idIndexes != null)
             {
-                MutableList<IDIndex<?, V>> invalidIdIndexes = Lists.mutable.empty();
-                this.idIndexes.forEachValue(idIndex ->
-                {
-                    try
-                    {
-                        idIndex.add(values);
-                    }
-                    catch (IDConflictException e)
-                    {
-                        invalidIdIndexes.add(idIndex);
-                    }
-                });
-                invalidIdIndexes.forEach(invalidIdIndex -> this.idIndexes.remove(invalidIdIndex.getSpecification()));
+                this.idIndexes.removeIf((key, idIndex) -> !idIndex.tryAdd(values));
             }
             if (this.indexes != null)
             {
@@ -816,20 +578,11 @@ public abstract class BaseCoreInstance extends AbstractCoreInstance
         {
             if (this.idIndexes != null)
             {
-                MutableList<IDIndex<?, V>> invalidIdIndexes = Lists.mutable.empty();
-                this.idIndexes.forEachValue(idIndex ->
+                this.idIndexes.removeIf((key, idIndex) ->
                 {
                     idIndex.remove(oldValue);
-                    try
-                    {
-                        idIndex.add(newValue);
-                    }
-                    catch (IDConflictException e)
-                    {
-                        invalidIdIndexes.add(idIndex);
-                    }
+                    return !idIndex.tryAdd(newValue);
                 });
-                invalidIdIndexes.forEach(invalidIdIndex -> this.idIndexes.remove(invalidIdIndex.getSpecification()));
             }
             if (this.indexes != null)
             {

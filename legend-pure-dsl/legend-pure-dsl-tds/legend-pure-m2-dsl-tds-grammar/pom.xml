@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.finos.legend.pure</groupId>
         <artifactId>legend-pure-dsl-tds</artifactId>
-        <version>5.60.1-SNAPSHOT</version>
+        <version>5.81.1-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -98,7 +98,6 @@
         <dependency>
             <groupId>io.deephaven</groupId>
             <artifactId>deephaven-csv</artifactId>
-            <version>0.12.0</version>
         </dependency>
 
         <dependency>
@@ -110,15 +109,10 @@
             <artifactId>eclipse-collections</artifactId>
         </dependency>
 
-<!--        <dependency>-->
-<!--            <groupId>org.antlr</groupId>-->
-<!--            <artifactId>antlr4-runtime</artifactId>-->
-<!--        </dependency>-->
-
-<!--        <dependency>-->
-<!--            <groupId>org.apache.commons</groupId>-->
-<!--            <artifactId>commons-lang3</artifactId>-->
-<!--        </dependency>-->
+        <dependency>
+            <groupId>org.antlr</groupId>
+            <artifactId>antlr4-runtime</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.finos.legend.pure</groupId>

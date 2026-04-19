@@ -18,6 +18,7 @@ import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.MutableList;
 
+import java.util.Comparator;
 import java.util.Objects;
 
 public class ModuleExternalReferenceMetadata
@@ -125,6 +126,7 @@ public class ModuleExternalReferenceMetadata
         private Builder(ModuleExternalReferenceMetadata metadata)
         {
             this.moduleName = metadata.moduleName;
+            this.referenceIdVersion = metadata.referenceIdVersion;
             this.elementExternalReferences = Lists.mutable.withAll(metadata.elementExternalReferences);
         }
 
@@ -172,7 +174,7 @@ public class ModuleExternalReferenceMetadata
         {
             if (this.elementExternalReferences.size() > 1)
             {
-                this.elementExternalReferences.sortThisBy(ElementExternalReferenceMetadata::getElementPath);
+                this.elementExternalReferences.sort(Comparator.comparing(ElementExternalReferenceMetadata::getElementPath));
                 int index = 0;
                 while (index < this.elementExternalReferences.size())
                 {

@@ -15,6 +15,7 @@
 package org.finos.legend.pure.maven.compiler;
 
 import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Component;
@@ -22,32 +23,28 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
-import org.apache.maven.project.DefaultDependencyResolutionRequest;
 import org.apache.maven.project.DependencyResolutionException;
-import org.apache.maven.project.DependencyResolutionRequest;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
 import org.eclipse.aether.RepositorySystemSession;
-import org.eclipse.aether.artifact.Artifact;
-import org.eclipse.aether.graph.Dependency;
-import org.eclipse.aether.graph.DependencyFilter;
-import org.eclipse.aether.util.filter.ScopeDependencyFilter;
 import org.finos.legend.pure.m3.generator.compiler.PureCompilerBinaryGenerator;
 import org.finos.legend.pure.m3.serialization.filesystem.repository.CodeRepository;
 import org.finos.legend.pure.m3.serialization.filesystem.repository.GenericCodeRepository;
 import org.finos.legend.pure.m4.exception.PureCompilationException;
 import org.finos.legend.pure.m4.serialization.grammar.antlr.PureParserException;
+import org.finos.legend.pure.maven.shared.DependencyResolutionScope;
+import org.finos.legend.pure.maven.shared.ProjectDependencyResolution;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -57,7 +54,7 @@ import java.util.stream.Stream;
         threadSafe = true)
 public class PureCompilerMojo extends AbstractMojo
 {
-    @Parameter(readonly = true, required = true, defaultValue = "${project.build.outputDirectory}")
+    @Parameter
     private File outputDirectory;
 
     @Parameter
@@ -66,41 +63,119 @@ public class PureCompilerMojo extends AbstractMojo
     @Parameter
     private Set<String> excludedRepositories;
 
+    /**
+     * <p>If there are multiple repositories, whether to compile them individually or all together.</p>
+     *
+     * <p>If multiple repositories are compiled individually, they will be ordered topologically based on dependencies.
+     * This means that all of a repository's dependencies will be compiled before it is.</p>
+     *
+     * <p>The default value depends on how repositories are specified: if repositories are explicitly specified, the
+     * default is false (compile them all together); otherwise, the default is true (compile them individually).</p>
+     */
+    @Parameter
+    private Boolean compileIndividually;
+
+    /**
+     * <p>The scope of the dependencies to resolve from the Maven module. Use names from {@link DependencyResolutionScope}.
+     * If not specified, defaults to
+     * <ul>
+     *     <li>{@code test} if the current execution phase is a "test phase"
+     *     (see {@link ProjectDependencyResolution#inTestPhase(MojoExecution)}), or</li>
+     *     <li>{@code compile} otherwise.</li>
+     * </ul></p>
+     *
+     * @see DependencyResolutionScope
+     */
+    @Parameter
+    protected String dependencyScope;
+
+    @Parameter(readonly = true, required = true, defaultValue = "${project.build.outputDirectory}")
+    private File projectOutputDirectory;
+
+    @Parameter(readonly = true, required = true, defaultValue = "${project.build.testOutputDirectory}")
+    private File projectTestOutputDirectory;
+
+    @Parameter(readonly = true, required = true, defaultValue = "${mojoExecution}")
+    private MojoExecution mojoExecution;
+
     @Component
     private ProjectDependenciesResolver mavenProjectDependenciesResolver;
 
-    @Parameter(defaultValue = "${repositorySystemSession}", readonly = true)
+    @Parameter(readonly = true, required = true, defaultValue = "${repositorySystemSession}")
     private RepositorySystemSession mavenRepoSession;
 
-    @Parameter(defaultValue = "${project}", readonly = true)
+    @Parameter(readonly = true, required = true, defaultValue = "${project}")
     private MavenProject mavenProject;
 
-    @Parameter(defaultValue = "compile")
-    private String dependencyScope;
+    @Parameter(defaultValue = "false", property = "pure.compiler.skip")
+    private boolean skip;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException
     {
-        getLog().info("Compiling Pure");
-        getLog().info("Output directory: " + this.outputDirectory);
-        getLog().info("Requested repositories: " + (isNonEmpty(this.repositories) ? String.join(", ", this.repositories) : "<none>"));
-        getLog().info("Excluded repositories: " + (isNonEmpty(this.excludedRepositories) ? String.join(", ", this.excludedRepositories) : "<none>"));
+        if (this.skip)
+        {
+            getLog().info("Skipping Pure compilation");
+            return;
+        }
+        DependencyResolutionScope dependencyResolutionScope = ProjectDependencyResolution.determineDependencyResolutionScope(this.dependencyScope, this.mojoExecution);
+        URL[] dependencyUrls;
+        try
+        {
+            dependencyUrls = ProjectDependencyResolution.getDependencyURLs(
+                    dependencyResolutionScope,
+                    this.mavenProject,
+                    this.mojoExecution,
+                    this.mavenRepoSession,
+                    this.projectOutputDirectory,
+                    this.projectTestOutputDirectory,
+                    this.mavenProjectDependenciesResolver
+            );
+        }
+        catch (DependencyResolutionException e)
+        {
+            throw new MojoExecutionException("Error setting up classloader with project dependencies", e);
+        }
 
-        Set<String> resolvedRepos = resolveRepositoriesToSerialize();
+        ClassLoader savedClassLoader = Thread.currentThread().getContextClassLoader();
+        try (URLClassLoader classLoader = new URLClassLoader(dependencyUrls, savedClassLoader))
+        {
+            Thread.currentThread().setContextClassLoader(classLoader);
+            executeWithinClassLoader(classLoader, dependencyResolutionScope);
+        }
+        catch (IOException e)
+        {
+            throw new MojoExecutionException("Error closing classloader", e);
+        }
+        finally
+        {
+            Thread.currentThread().setContextClassLoader(savedClassLoader);
+        }
+    }
+
+    private void executeWithinClassLoader(ClassLoader classLoader, DependencyResolutionScope dependencyResolutionScope) throws MojoExecutionException, MojoFailureException
+    {
+        getLog().info("Compiling Pure");
+        File resolvedOutputDir = resolveOutputDirectory();
+        getLog().debug("Output directory: " + resolvedOutputDir);
+        getLog().debug("Requested repositories: " + (isNonEmpty(this.repositories) ? String.join(", ", this.repositories) : "<none>"));
+        getLog().debug("Excluded repositories: " + (isNonEmpty(this.excludedRepositories) ? String.join(", ", this.excludedRepositories) : "<none>"));
+        getLog().debug("Dependency scope: " + dependencyResolutionScope);
+
+        Set<String> resolvedRepos = resolveRepositoriesToSerialize(dependencyResolutionScope);
         if ((resolvedRepos != null) && resolvedRepos.isEmpty())
         {
             getLog().warn("No repositories to serialize");
             return;
         }
-        getLog().info("Resolved repositories: " + ((resolvedRepos == null) ? "<all>" : String.join(", ", resolvedRepos)));
+        getLog().debug("Resolved repositories: " + ((resolvedRepos == null) ? "<all>" : String.join(", ", resolvedRepos)));
 
-        try (URLClassLoader classLoader = new URLClassLoader(getDependencyURLs(), Thread.currentThread().getContextClassLoader()))
+        boolean serializeReposIndividually = shouldSerializeIndividually(resolvedRepos);
+        getLog().debug("Compiling repositories individually: " + this.compileIndividually);
+
+        try
         {
-            PureCompilerBinaryGenerator.serializeModules(this.outputDirectory.toPath(), classLoader, resolvedRepos, this.excludedRepositories);
-        }
-        catch (MojoExecutionException e)
-        {
-            throw e;
+            PureCompilerBinaryGenerator.serializeModules(resolvedOutputDir.toPath(), classLoader, resolvedRepos, this.excludedRepositories, serializeReposIndividually);
         }
         catch (PureCompilationException | PureParserException e)
         {
@@ -117,7 +192,22 @@ public class PureCompilerMojo extends AbstractMojo
         }
     }
 
-    private Set<String> resolveRepositoriesToSerialize() throws MojoExecutionException
+    // Methods below are package-private for testing. Do not widen to public.
+
+    File resolveOutputDirectory()
+    {
+        if (this.outputDirectory != null)
+        {
+            return this.outputDirectory;
+        }
+        if (ProjectDependencyResolution.inTestPhase(this.mojoExecution))
+        {
+            return this.projectTestOutputDirectory;
+        }
+        return this.projectOutputDirectory;
+    }
+
+    Set<String> resolveRepositoriesToSerialize(DependencyResolutionScope resolvedDependencyScope) throws MojoExecutionException
     {
         // If the user has specified repositories, use them
         if (isNonEmpty(this.repositories))
@@ -133,17 +223,11 @@ public class PureCompilerMojo extends AbstractMojo
         }
 
         // Look for repositories defined in the project
-        Set<String> foundRepositories;
-        try (Stream<Path> files = Files.list(this.outputDirectory.toPath()))
+        Set<String> foundRepositories = new HashSet<>();
+        forEachRepoDefinition(this.projectOutputDirectory, foundRepositories::add);
+        if (ProjectDependencyResolution.inTestPhase(this.mojoExecution) && resolvedDependencyScope.isTestScope())
         {
-            foundRepositories = files.filter(f -> f.toString().endsWith(".definition.json"))
-                    .map(GenericCodeRepository::build)
-                    .map(CodeRepository::getName)
-                    .collect(Collectors.toSet());
-        }
-        catch (IOException e)
-        {
-            throw new UncheckedIOException(e);
+            forEachRepoDefinition(this.projectTestOutputDirectory, foundRepositories::add);
         }
 
         // If there are no repositories defined in the project, then we will serialize all repositories (minus any specified exclusions)
@@ -160,64 +244,40 @@ public class PureCompilerMojo extends AbstractMojo
         return foundRepositories;
     }
 
-    private URL[] getDependencyURLs() throws DependencyResolutionException, MojoExecutionException
+    boolean shouldSerializeIndividually(Set<String> resolvedRepos)
     {
-        DependencyResolutionRequest request = new DefaultDependencyResolutionRequest(this.mavenProject, this.mavenRepoSession)
-                .setResolutionFilter(getDependencyFilter());
-        return Stream.concat(
-                        Stream.of(this.outputDirectory),
-                        this.mavenProjectDependenciesResolver.resolve(request).getDependencies().stream()
-                                .map(Dependency::getArtifact)
-                                .map(Artifact::getFile))
-                .map(PureCompilerMojo::toURL)
-                .toArray(URL[]::new);
+        // If the user has specified whether to serialize individually, use that
+        if (this.compileIndividually != null)
+        {
+            return this.compileIndividually;
+        }
+
+        // If the user has specified repos to serialize, serialize them together; otherwise, serialize individually
+        return !isNonEmpty(resolvedRepos);
     }
 
-    private DependencyFilter getDependencyFilter() throws MojoExecutionException
+    void forEachRepoDefinition(File directory, Consumer<? super String> consumer)
     {
-        switch (this.dependencyScope)
+        forEachRepoDefinition(directory.toPath(), consumer);
+    }
+
+    void forEachRepoDefinition(Path directory, Consumer<? super String> consumer)
+    {
+        try (Stream<Path> files = Files.list(directory))
         {
-            case "compile":
-            {
-                return new ScopeDependencyFilter(Arrays.asList("compile", "provided", "system"), null);
-            }
-            case "compile+runtime":
-            {
-                return new ScopeDependencyFilter(Arrays.asList("compile", "provided", "runtime", "system"), null);
-            }
-            case "runtime":
-            {
-                return new ScopeDependencyFilter(Arrays.asList("compile", "runtime"), null);
-            }
-            case "runtime+system":
-            {
-                return new ScopeDependencyFilter(Arrays.asList("compile", "runtime", "system"), null);
-            }
-            case "test":
-            {
-                return null;
-            }
-            default:
-            {
-                throw new MojoExecutionException("Unknown scope: " + this.dependencyScope);
-            }
+            files.filter(f -> f.toString().endsWith(".definition.json"))
+                    .map(GenericCodeRepository::build)
+                    .map(CodeRepository::getName)
+                    .forEach(consumer);
+        }
+        catch (IOException e)
+        {
+            throw new UncheckedIOException(e);
         }
     }
 
     private static boolean isNonEmpty(Set<?> set)
     {
         return (set != null) && !set.isEmpty();
-    }
-
-    private static URL toURL(File file)
-    {
-        try
-        {
-            return file.toURI().toURL();
-        }
-        catch (MalformedURLException e)
-        {
-            throw new UncheckedIOException(e);
-        }
     }
 }

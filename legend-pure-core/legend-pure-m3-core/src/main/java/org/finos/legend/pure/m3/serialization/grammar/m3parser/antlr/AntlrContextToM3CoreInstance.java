@@ -77,6 +77,7 @@ import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.function.proper
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.multiplicity.Multiplicity;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.multiplicity.MultiplicityInstance;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.multiplicity.MultiplicityValueInstance;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.relation.Column;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.relation.GenericTypeOperationInstance;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.relation.RelationType;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.relationship.Association;
@@ -300,7 +301,7 @@ public class AntlrContextToM3CoreInstance
                 if (oldPaths.equals(newPaths))
                 {
                     hasImportChanged = false;
-                    Package systemImports = (PackageInstance) this.processorSupport.package_getByUserPath("system::imports");
+                    Package systemImports = (Package) this.processorSupport.package_getByUserPath("system::imports");
                     systemImports._children(systemImports._children().reject(e -> importGroupID.equals(e._name())));
                     systemImports._childrenAdd(oldImportGroup);
                     oldImportGroup._package(systemImports);
@@ -757,7 +758,7 @@ public class AntlrContextToM3CoreInstance
                 ._parametersValues(params);
     }
 
-    private CoreInstance expression(ExpressionContext ctx, String exprName, MutableList<String> typeParametersNames, MutableList<String> multiplicityParameterNames, LambdaContext lambdaContext, String space, boolean wrapFlag, ImportGroup importId, boolean addLines)
+    public CoreInstance expression(ExpressionContext ctx, String exprName, MutableList<String> typeParametersNames, MutableList<String> multiplicityParameterNames, LambdaContext lambdaContext, String space, boolean wrapFlag, ImportGroup importId, boolean addLines)
     {
         CoreInstance result;
 
@@ -950,6 +951,11 @@ public class AntlrContextToM3CoreInstance
                 columnNames.add(this.repository.newStringCoreInstance(colName));
                 GenericType returnType = null;
                 Multiplicity multiplicity = (Multiplicity) org.finos.legend.pure.m3.navigation.multiplicity.Multiplicity.newMultiplicity(0, 1, processorSupport);
+
+                // Extract stereotypes and tagged values
+                RichIterable<? extends CoreInstance> stereotypes = (oneColSpec.stereotypes() == null) ? null : stereotypes(oneColSpec.stereotypes(), importId);
+                RichIterable<? extends TaggedValue> taggedValues = (oneColSpec.taggedValues() == null) ? null : taggedValues(oneColSpec.taggedValues(), importId);
+
                 if (oneColSpec.anyLambda() != null)
                 {
                     lambdas.add(processLambda(oneColSpec.anyLambda(), Lists.mutable.empty(), Lists.mutable.empty(), lambdaContext, importId, space, addLines, false, Lists.mutable.empty()));
@@ -972,7 +978,7 @@ public class AntlrContextToM3CoreInstance
                     returnType = (GenericType) processorSupport.newAnonymousCoreInstance(src, M3Paths.GenericType);
                     returnType._rawType(null);
                 }
-                columnInstances.add(_Column.getColumnInstance(colName, false, returnType, multiplicity, src, processorSupport));
+                columnInstances.add(_Column.getColumnInstance(colName, false, returnType, multiplicity, stereotypes, taggedValues, src, processorSupport));
             });
             RelationType<?> relationType = _RelationType.build(columnInstances, this.sourceInformation.getPureSourceInformation(ctx.getStart(), ctx.getStart(), ctx.getStop()), processorSupport);
             GenericType relationTypeGenericType = (GenericType) processorSupport.type_wrapGenericType(relationType);
@@ -3346,6 +3352,8 @@ public class AntlrContextToM3CoreInstance
 
     private Profile profile(ProfileContext ctx, ImportGroup importId)
     {
+        checkExists(ctx.qualifiedName().packagePath(), ctx.qualifiedName().identifier(), null);
+
         String profileName = ctx.qualifiedName().identifier().getText();
         SourceInformation sourceInfo = this.sourceInformation.getPureSourceInformation(ctx.getStart(), ctx.qualifiedName().getStop(), ctx.getStop());
         Profile profile = ProfileInstance.createPersistent(this.repository, profileName, sourceInfo);
@@ -3897,10 +3905,10 @@ public class AntlrContextToM3CoreInstance
         return Source.importForSourceName(fileName) + "_" + count;
     }
 
-    private static CoreInstance findEnum(String enumerationFullPath, final String enumName, ModelRepository repository)
+    private static CoreInstance findEnum(String enumerationFullPath, String enumName, ModelRepository repository)
     {
-        EnumerationInstance enumerationInstance = (EnumerationInstance) org.finos.legend.pure.m3.navigation.PackageableElement.PackageableElement.findPackageableElement(enumerationFullPath, repository);
-        return enumerationInstance._values().detect(each -> enumName.equals(each.getName()));
+        CoreInstance enumeration = org.finos.legend.pure.m3.navigation.PackageableElement.PackageableElement.findPackageableElement(enumerationFullPath, repository);
+        return org.finos.legend.pure.m3.navigation.enumeration.Enumeration.findEnum(enumeration, enumName);
     }
 
     private InstanceValue doWrap(ListIterable<? extends CoreInstance> content, int beginLine, int beginColumn, int endLine, int endColumn)

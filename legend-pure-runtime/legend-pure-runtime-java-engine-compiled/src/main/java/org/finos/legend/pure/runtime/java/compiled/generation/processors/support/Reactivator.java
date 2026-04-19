@@ -36,6 +36,7 @@ import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.valuespecificat
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.valuespecification.ValueSpecification;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.valuespecification.VariableExpression;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.router.RoutedValueSpecification;
+import org.finos.legend.pure.m3.exception.PureExecutionException;
 import org.finos.legend.pure.m3.execution.ExecutionSupport;
 import org.finos.legend.pure.m3.navigation.M3Paths;
 import org.finos.legend.pure.m4.exception.PureException;
@@ -163,6 +164,10 @@ public class Reactivator
         try
         {
             return reactivateWithoutJavaCompilationImpl(valueSpecification, lambdaOpenVariablesMap, es, true, bridge);
+        }
+        catch (PureExecutionException e)
+        {
+            throw e;
         }
         catch (PureException e)
         {
@@ -307,7 +312,10 @@ public class Reactivator
                     paramValues.set(0, Lists.fixedSize.of(sfe._genericType()._rawType()));
                     break;
                 }
+                // can we generalize the @{type} so we can avoid hardcoding here?
                 case "cast_Any_m__T_1__T_m_":
+                case "to_Variant_$0_1$__T_$0_1$__T_$0_1$_":
+                case "toMany_Variant_$0_1$__T_$0_1$__T_MANY_":
                 {
                     //Have to get the second param from the generic type
                     paramValues.set(1, Lists.fixedSize.of(sfe._genericType()));

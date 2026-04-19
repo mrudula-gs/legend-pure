@@ -15,10 +15,23 @@
 package org.finos.legend.pure.m3.serialization.compiler.metadata.v1;
 
 import org.finos.legend.pure.m3.serialization.compiler.metadata.AbstractTestModuleMetadataSerializerExtension;
+import org.finos.legend.pure.m3.serialization.compiler.metadata.ModuleMetadata;
 import org.finos.legend.pure.m3.serialization.compiler.metadata.ModuleMetadataSerializerExtension;
+import org.junit.Test;
 
 public class TestModuleMetadataSerializerV1 extends AbstractTestModuleMetadataSerializerExtension
 {
+    @Override
+    @Test
+    public void testSimpleModuleWithDependencies()
+    {
+        ModuleMetadata metadata = getSimpleModuleWithDependencies();
+        ModuleMetadata expectedMetadata = ModuleMetadata.builder(metadata)
+                .withNoDependencies()
+                .build();
+        testModuleMetadataSerializes(expectedMetadata, metadata);
+    }
+
     @Override
     protected ModuleMetadataSerializerExtension getExtension()
     {

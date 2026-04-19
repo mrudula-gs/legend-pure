@@ -21,7 +21,6 @@ import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.api.map.MapIterable;
-import org.eclipse.collections.api.partition.PartitionIterable;
 import org.eclipse.collections.api.set.MutableSet;
 import org.eclipse.collections.api.tuple.Pair;
 import org.eclipse.collections.impl.set.strategy.mutable.UnifiedSetWithHashingStrategy;
@@ -34,14 +33,15 @@ import org.finos.legend.pure.m3.navigation.M3Paths;
 import org.finos.legend.pure.m3.navigation.M3Properties;
 import org.finos.legend.pure.m3.navigation.PackageableElement.PackageableElement;
 import org.finos.legend.pure.m3.navigation.ProcessorSupport;
+import org.finos.legend.pure.m3.navigation.function.Function;
 import org.finos.legend.pure.m3.navigation.generictype.GenericType;
 import org.finos.legend.pure.m3.navigation.multiplicity.Multiplicity;
 import org.finos.legend.pure.m3.navigation.property.Property;
 import org.finos.legend.pure.m3.navigation.type.Type;
 import org.finos.legend.pure.m3.serialization.filesystem.repository.CodeRepository;
 import org.finos.legend.pure.m3.serialization.filesystem.usercodestorage.RepositoryCodeStorage;
-import org.finos.legend.pure.m3.serialization.filesystem.usercodestorage.vcs.VersionControlledCodeStorage;
 import org.finos.legend.pure.m3.serialization.runtime.Source;
+import org.finos.legend.pure.m3.tools.JavaTools;
 import org.finos.legend.pure.m4.coreinstance.CoreInstance;
 import org.finos.legend.pure.m4.exception.PureCompilationException;
 import org.finos.legend.pure.m4.exception.PureException;
@@ -65,6 +65,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
+import java.util.Comparator;
 
 public final class JavaSourceCodeGenerator
 {
@@ -146,6 +147,7 @@ public final class JavaSourceCodeGenerator
     private final boolean writeFilesToDisk;
     private final Path directoryToWriteFilesTo;
     private final String externalAPIPackage;
+    private final boolean useLegacyMetadataForExternalAPI;
 
     private final boolean includePureStackTrace;
     private final MutableSet<CoreInstance> processedClasses = Sets.mutable.empty();
@@ -155,17 +157,18 @@ public final class JavaSourceCodeGenerator
 
     private final String name;
 
-    public JavaSourceCodeGenerator(ProcessorSupport processorSupport, IdBuilder idBuilder, RepositoryCodeStorage codeStorage, boolean writeFilesToDisk, Path directoryToWriteFilesTo, boolean includePureStackTrace, Iterable<? extends CompiledExtension> providedExtensions, String name, String externalAPIPackage, boolean generateCompilerExtensionCode)
+    public JavaSourceCodeGenerator(ProcessorSupport processorSupport, IdBuilder idBuilder, RepositoryCodeStorage codeStorage, boolean writeFilesToDisk, Path directoryToWriteFilesTo, boolean includePureStackTrace, Iterable<? extends CompiledExtension> providedExtensions, String name, String externalAPIPackage, boolean generateCompilerExtensionCode, boolean useLegacyMetadataForExternalAPI)
     {
         this.name = name;
         this.processorSupport = processorSupport;
-        this.idBuilder = (idBuilder == null) ? IdBuilder.newIdBuilder(this.processorSupport) : idBuilder;
+        this.idBuilder = (idBuilder == null) ? IdBuilder.newIdBuilder(this.processorSupport, false) : idBuilder;
         this.codeStorage = codeStorage;
         this.writeFilesToDisk = writeFilesToDisk;
         this.directoryToWriteFilesTo = directoryToWriteFilesTo;
         this.includePureStackTrace = includePureStackTrace;
         this.externalAPIPackage = externalAPIPackage;
-        this.extensions = new UnifiedSetWithHashingStrategy<>(new HashingStrategy<CompiledExtension>()
+        this.useLegacyMetadataForExternalAPI = useLegacyMetadataForExternalAPI;
+        this.extensions = UnifiedSetWithHashingStrategy.newSet(new HashingStrategy<CompiledExtension>()
         {
             @Override
             public int computeHashCode(CompiledExtension extension)
@@ -178,7 +181,12 @@ public final class JavaSourceCodeGenerator
             {
                 return extension1.getClass() == extension2.getClass();
             }
-        }).withAll(CompiledExtensionLoader.extensions()).withAll(providedExtensions).toList();
+        }, CompiledExtensionLoader.extensions()).withAll(providedExtensions).toList();
+    }
+
+    public JavaSourceCodeGenerator(ProcessorSupport processorSupport, IdBuilder idBuilder, RepositoryCodeStorage codeStorage, boolean writeFilesToDisk, Path directoryToWriteFilesTo, boolean includePureStackTrace, Iterable<? extends CompiledExtension> providedExtensions, String name, String externalAPIPackage, boolean generateCompilerExtensionCode)
+    {
+        this(processorSupport, idBuilder, codeStorage, writeFilesToDisk, directoryToWriteFilesTo, includePureStackTrace, providedExtensions, name, externalAPIPackage, generateCompilerExtensionCode, true);
     }
 
     public JavaSourceCodeGenerator(ProcessorSupport processorSupport, RepositoryCodeStorage codeStorage, boolean writeFilesToDisk, Path directoryToWriteFilesTo, boolean includePureStackTrace, Iterable<? extends CompiledExtension> extensions, String name, String externalAPIPackage, boolean generateCompilerExtensionCode)
@@ -344,17 +352,13 @@ public final class JavaSourceCodeGenerator
 
     ListIterable<StringJavaSource> generateExternalizableAPI(String pack)
     {
-        MutableList<String> externalizableFunctionCode = Lists.mutable.empty();
         CoreInstance functionClass = this.processorSupport.package_getByUserPath(M3Paths.Function);
         ProcessorContext processorContext = new ProcessorContext(this.processorSupport, this.extensions, this.idBuilder, this.includePureStackTrace);
-        AccessLevel.EXTERNALIZABLE.getStereotype(this.processorSupport).getValueForMetaPropertyToMany(M3Properties.modelElements).forEach(element ->
-        {
-            if (Instance.instanceOf(element, functionClass, this.processorSupport))
-            {
-                externalizableFunctionCode.add(FunctionProcessor.buildExternalizableFunction(element, processorContext));
-            }
-        });
-        String text = this.buildExternalizableFunctionClass(externalizableFunctionCode);
+        MutableList<String> externalizableFunctionCode = AccessLevel.EXTERNALIZABLE.getStereotype(this.processorSupport).getValueForMetaPropertyToMany(M3Properties.modelElements).collectIf(
+                e -> (e instanceof Function) || Instance.instanceOf(e, functionClass, this.processorSupport),
+                e -> FunctionProcessor.buildExternalizableFunction(e, processorContext),
+                Lists.mutable.empty());
+        String text = ExternalClassBuilder.buildExternalizableFunctionClass(pack, EXTERNAL_FUNCTIONS_CLASS_NAME, externalizableFunctionCode, this.codeStorage.getAllRepositories().collect(CodeRepository::getName), this.useLegacyMetadataForExternalAPI);
         return Lists.immutable.with(StringJavaSource.newStringJavaSource(pack, EXTERNAL_FUNCTIONS_CLASS_NAME, text));
     }
 
@@ -484,26 +488,63 @@ public final class JavaSourceCodeGenerator
 
     private String buildFunctionClass(String name, RichIterable<String> functionDefinitions, MapIterable<String, String> lambdaFunctions, MapIterable<String, String> nativeFunctions)
     {
+        StringBuilder staticBlockContent = new StringBuilder();
+        StringBuilder helperMethodsContent = new StringBuilder();
+        MutableList<Pair<String, String>> allFunctions = Lists.mutable.empty();
+
+        if (lambdaFunctions != null)
+        {
+            lambdaFunctions.forEachKeyValue((key, value) -> allFunctions.add(Tuples.pair(key, value)));
+        }
+        if (nativeFunctions != null)
+        {
+            nativeFunctions.forEachKeyValue((key, value) -> allFunctions.add(Tuples.pair(key, value)));
+        }
+
+        allFunctions.sort(Comparator.comparing(Pair::getOne));
+
+        if (!allFunctions.isEmpty())
+        {
+            staticBlockContent.append("    public static MutableMap<String, SharedPureFunction<?>> __functions = Maps.mutable.empty();\n");
+            staticBlockContent.append("    static\n");
+            staticBlockContent.append("    {\n");
+
+            allFunctions.forEach(pair ->
+            {
+                String key = pair.getOne();
+                String methodName = JavaTools.makeValidJavaIdentifier(key);
+                staticBlockContent.append("        __functions.put(\"").append(key).append("\", ").append(methodName).append("());\n");
+            });
+
+            staticBlockContent.append("    }\n");
+        }
+        else
+        {
+            staticBlockContent.append("    public static MutableMap<String, SharedPureFunction<?>> __functions = Maps.fixedSize.empty();\n");
+        }
+
+        if (!allFunctions.isEmpty())
+        {
+            allFunctions.forEach(pair ->
+            {
+                String key = pair.getOne();
+                String value = pair.getTwo();
+                String methodName = JavaTools.makeValidJavaIdentifier(key);
+                helperMethodsContent.append("\n");
+                helperMethodsContent.append("    private static SharedPureFunction<?> ").append(methodName).append("()\n");
+                helperMethodsContent.append("    {\n");
+                helperMethodsContent.append("        return ").append(value).append(";\n");
+                helperMethodsContent.append("    }\n");
+            });
+        }
+
         return
                 "public class " + name + "\n" +
                         "{\n" +
-                        ((lambdaFunctions != null || nativeFunctions != null) ?
-                                "    public static MutableMap<String, SharedPureFunction<?>> __functions = Maps.mutable.empty();\n" +
-                                        "    static\n" +
-                                        "    {\n" +
-                                        (lambdaFunctions == null ? "" : lambdaFunctions.keyValuesView().collect(keyValuePair -> "        __functions.put(\"" + keyValuePair.getOne() + "\", " + keyValuePair.getTwo() + ");\n").makeString("")) +
-                                        (nativeFunctions == null ? "" : nativeFunctions.keyValuesView().collect(keyValuePair -> "        __functions.put(\"" + keyValuePair.getOne() + "\", " + keyValuePair.getTwo() + ");\n").makeString("")) +
-                                        "    }\n" :
-                                "    public static MutableMap<String, SharedPureFunction<?>> __functions = Maps.fixedSize.empty();\n"
-                        ) +
+                        staticBlockContent.toString() +
                         (functionDefinitions == null || functionDefinitions.isEmpty() ? "" : functionDefinitions.makeString("\n", "\n\n", "\n")) +
+                        helperMethodsContent.toString() +
                         "}";
-    }
-
-    private String buildExternalizableFunctionClass(RichIterable<String> functionDefinitions)
-    {
-        PartitionIterable<CodeRepository> sortedRepos = this.codeStorage.getAllRepositories().partition(p -> this.codeStorage.getOriginalCodeStorage(p) instanceof VersionControlledCodeStorage);
-        return ExternalClassBuilder.buildExternalizableFunctionClass(functionDefinitions, EXTERNAL_FUNCTIONS_CLASS_NAME, sortedRepos.getSelected().collect(CodeRepository::getName), sortedRepos.getRejected().collect(CodeRepository::getName));
     }
 
     private String buildPureCompiledLambda(ProcessorContext processorContext)
@@ -522,7 +563,7 @@ public final class JavaSourceCodeGenerator
                 "        super(executionSupport, lambdaId, pureFunction);\n" +
                 "    }\n" +
                 "\n" +
-                "    @Override" +
+                "    @Override\n" +
                 "    public PureCompiledLambda copy()\n" +
                 "    {\n" +
                 "        LambdaFunction<Object> lambda = lambdaFunction();\n" +
@@ -726,7 +767,8 @@ public final class JavaSourceCodeGenerator
                 StringJavaSource.newStringJavaSource(JavaPackageAndImportBuilder.platformJavaPackage(), "PureCompiledLambda", imports + platform + this.buildPureCompiledLambda(processorContext)),
                 StringJavaSource.newStringJavaSource(JavaPackageAndImportBuilder.platformJavaPackage(), "LambdaZero", imports + platform + this.buildLambdaZero()),
                 EnumProcessor.processEnum(),
-                EnumProcessor.processEnumLazy());
+                EnumProcessor.processEnumLazy(),
+                EnumProcessor.processEnumLazyComponent());
 
         if (this.writeFilesToDisk)
         {

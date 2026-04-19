@@ -27,6 +27,7 @@ import org.eclipse.collections.impl.utility.LazyIterate;
 import org.finos.legend.pure.m3.compiler.Context;
 import org.finos.legend.pure.m3.coreinstance.BaseCoreInstance;
 import org.finos.legend.pure.m3.coreinstance.Package;
+import org.finos.legend.pure.m3.coreinstance.lazy.AbstractLazyCoreInstance;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.function.FunctionAccessor;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.Any;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.Enumeration;
@@ -43,6 +44,7 @@ import org.finos.legend.pure.m3.navigation._class._Class;
 import org.finos.legend.pure.m3.navigation.function.Function;
 import org.finos.legend.pure.m3.navigation.property.Property;
 import org.finos.legend.pure.m3.navigation.type.Type;
+import org.finos.legend.pure.m3.tools.GraphTools;
 import org.finos.legend.pure.m4.coreinstance.CoreInstance;
 import org.finos.legend.pure.m4.coreinstance.SourceInformation;
 import org.finos.legend.pure.m4.coreinstance.primitive.PrimitiveCoreInstance;
@@ -79,6 +81,11 @@ public class CompiledProcessorSupport implements ProcessorSupport
         this.extraSupportedTypes = extraSupportedTypes;
     }
 
+    public CompiledProcessorSupport(ClassLoader globalClassLoader, Metadata metadata)
+    {
+        this(globalClassLoader, metadata, null);
+    }
+
     @Override
     public boolean instance_instanceOf(CoreInstance object, String typeName)
     {
@@ -112,8 +119,25 @@ public class CompiledProcessorSupport implements ProcessorSupport
         if (object instanceof ValCoreInstance)
         {
             String valType = ((ValCoreInstance) object).getType();
-            return typeName.equals(valType) ||
-                    (M3Paths.Date.equals(typeName) && (valType.equals(M3Paths.DateTime) || valType.equals(M3Paths.StrictDate) || valType.equals(M3Paths.LatestDate)));
+            if (typeName.equals(valType))
+            {
+                return true;
+            }
+            switch (typeName)
+            {
+                case M3Paths.Date:
+                {
+                    return valType.equals(M3Paths.DateTime) || valType.equals(M3Paths.StrictDate) || valType.equals(M3Paths.LatestDate);
+                }
+                case M3Paths.Number:
+                {
+                    return valType.equals(M3Paths.Integer) || valType.equals(M3Paths.Float) || valType.equals(M3Paths.Decimal);
+                }
+                default:
+                {
+                    return false;
+                }
+            }
         }
 
         return Instance.instanceOf(object, typeName, this);
@@ -262,6 +286,11 @@ public class CompiledProcessorSupport implements ProcessorSupport
     @Override
     public CoreInstance package_getByUserPath(String path)
     {
+        if (this.metadata.supportsElementByPath())
+        {
+            return this.metadata.getElementByPath(path);
+        }
+
         // Check top level elements
         if (path.isEmpty() || M3Paths.Root.equals(path) || "::".equals(path))
         {
@@ -282,7 +311,7 @@ public class CompiledProcessorSupport implements ProcessorSupport
             // An element in Root - probably a package
             try
             {
-                CoreInstance element = this.metadataAccessor.getPackage(M3Paths.Root + "::" + path);
+                CoreInstance element = this.metadataAccessor.getPackage(path);
                 if (element != null)
                 {
                     return element;
@@ -305,7 +334,7 @@ public class CompiledProcessorSupport implements ProcessorSupport
         // Perhaps the element is a class?
         try
         {
-            CoreInstance element = this.metadataAccessor.getClass(M3Paths.Root + "::" + path);
+            CoreInstance element = this.metadataAccessor.getClass(path);
             if (element != null)
             {
                 return element;
@@ -320,7 +349,7 @@ public class CompiledProcessorSupport implements ProcessorSupport
         Package pkg;
         try
         {
-            pkg = this.metadataAccessor.getPackage(M3Paths.Root + "::" + path.substring(0, lastColon - 1));
+            pkg = this.metadataAccessor.getPackage(path.substring(0, lastColon - 1));
         }
         catch (Exception ignore)
         {
@@ -340,6 +369,11 @@ public class CompiledProcessorSupport implements ProcessorSupport
     @Override
     public CoreInstance repository_getTopLevel(String name)
     {
+        if (this.metadata.supportsElementByPath() && GraphTools.isTopLevelName(name))
+        {
+            return this.metadata.getElementByPath(name);
+        }
+
         if (M3Paths.Root.equals(name))
         {
             return this.metadataAccessor.getPackage(M3Paths.Root);
@@ -360,7 +394,7 @@ public class CompiledProcessorSupport implements ProcessorSupport
     {
         if (PrimitiveUtilities.isPrimitiveTypeName(type))
         {
-            return new ValCoreInstance(null, type);
+            return ValCoreInstance.newVal(null, type);
         }
         try
         {
@@ -378,7 +412,7 @@ public class CompiledProcessorSupport implements ProcessorSupport
     {
         if (PrimitiveUtilities.isPrimitiveTypeName(typeName))
         {
-            return new ValCoreInstance(name, typeName);
+            return ValCoreInstance.newVal(name, typeName);
         }
         try
         {
@@ -470,10 +504,12 @@ public class CompiledProcessorSupport implements ProcessorSupport
     {
         if (instance instanceof ValCoreInstance)
         {
-            return this.metadataAccessor.getPrimitiveType(((ValCoreInstance) instance).getType());
+            return this.metadata.supportsElementByPath() ?
+                   this.metadata.getElementByPath(((ValCoreInstance) instance).getType()) :
+                   this.metadataAccessor.getPrimitiveType(((ValCoreInstance) instance).getType());
         }
 
-        if (instance instanceof QuantityCoreInstance)
+        if ((instance instanceof QuantityCoreInstance) || (instance instanceof AbstractLazyCoreInstance))
         {
             return instance.getClassifier();
         }
@@ -512,13 +548,17 @@ public class CompiledProcessorSupport implements ProcessorSupport
     @Override
     public CoreInstance type_BottomType()
     {
-        return this.metadataAccessor.getBottomType();
+        return this.metadata.supportsElementByPath() ?
+               this.metadata.getElementByPath(M3Paths.Nil) :
+               this.metadataAccessor.getBottomType();
     }
 
     @Override
     public CoreInstance type_TopType()
     {
-        return this.metadataAccessor.getTopType();
+        return this.metadata.supportsElementByPath() ?
+               this.metadata.getElementByPath(M3Paths.Any) :
+               this.metadataAccessor.getTopType();
     }
 
     public Metadata getMetadata()

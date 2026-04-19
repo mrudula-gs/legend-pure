@@ -29,7 +29,7 @@ import java.util.Collection;
 
 public class Shared
 {
-    public static ClassLoader buildClassLoader(MavenProject project, ClassLoader parent, Log log) throws DependencyResolutionRequiredException
+    public static URLClassLoader buildClassLoader(MavenProject project, ClassLoader parent, Log log) throws DependencyResolutionRequiredException
     {
 
         // Add the project output to the plugin classloader
@@ -49,7 +49,7 @@ public class Shared
                             }
                         }).toArray(new URL[0]);
 
-        log.info("    Project classLoader URLs " + Arrays.toString(urlsForClassLoader));
+        log.debug("    Project classLoader URLs " + Arrays.toString(urlsForClassLoader));
         return new URLClassLoader(urlsForClassLoader, parent);
     }
 

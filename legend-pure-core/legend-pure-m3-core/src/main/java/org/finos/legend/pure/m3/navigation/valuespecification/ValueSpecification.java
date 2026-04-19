@@ -16,7 +16,10 @@ package org.finos.legend.pure.m3.navigation.valuespecification;
 
 import org.eclipse.collections.api.list.ListIterable;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.Any;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.valuespecification.FunctionExpression;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.valuespecification.InstanceValue;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.valuespecification.NonExecutableValueSpecification;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.valuespecification.VariableExpression;
 import org.finos.legend.pure.m3.navigation.Instance;
 import org.finos.legend.pure.m3.navigation.M3Paths;
 import org.finos.legend.pure.m3.navigation.M3Properties;
@@ -28,7 +31,7 @@ public class ValueSpecification
 {
     public static boolean isExecutable(CoreInstance valueSpecification, ProcessorSupport processorSupport)
     {
-        return !"NonExecutableValueSpecification".equals(processorSupport.getClassifier(valueSpecification).getName());
+        return !isNonExecutableValueSpecification(valueSpecification, processorSupport);
     }
 
     public static boolean instanceOf(CoreInstance valueSpecification, String typeName, ProcessorSupport processorSupport)
@@ -47,6 +50,32 @@ public class ValueSpecification
         return (rawType != null) && processorSupport.type_subTypeOf(rawType, type);
     }
 
+    public static boolean isValueSpecification(CoreInstance instance, ProcessorSupport processorSupport)
+    {
+        if (instance == null)
+        {
+            return false;
+        }
+        if (instance instanceof org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.valuespecification.ValueSpecification)
+        {
+            return true;
+        }
+        return (!(instance instanceof Any) || (instance instanceof AbstractCoreInstanceWrapper)) && processorSupport.instance_instanceOf(instance, M3Paths.ValueSpecification);
+    }
+
+    public static boolean isNonExecutableValueSpecification(CoreInstance instance, ProcessorSupport processorSupport)
+    {
+        if (instance == null)
+        {
+            return false;
+        }
+        if (instance instanceof NonExecutableValueSpecification)
+        {
+            return true;
+        }
+        return (!(instance instanceof Any) || (instance instanceof AbstractCoreInstanceWrapper)) && processorSupport.instance_instanceOf(instance, M3Paths.NonExecutableValueSpecification);
+    }
+
     public static boolean isInstanceValue(CoreInstance instance, ProcessorSupport processorSupport)
     {
         if (instance == null)
@@ -58,6 +87,32 @@ public class ValueSpecification
             return true;
         }
         return (!(instance instanceof Any) || (instance instanceof AbstractCoreInstanceWrapper)) && processorSupport.instance_instanceOf(instance, M3Paths.InstanceValue);
+    }
+
+    public static boolean isVariableExpression(CoreInstance instance, ProcessorSupport processorSupport)
+    {
+        if (instance == null)
+        {
+            return false;
+        }
+        if (instance instanceof VariableExpression)
+        {
+            return true;
+        }
+        return (!(instance instanceof Any) || (instance instanceof AbstractCoreInstanceWrapper)) && processorSupport.instance_instanceOf(instance, M3Paths.VariableExpression);
+    }
+
+    public static boolean isFunctionExpression(CoreInstance instance, ProcessorSupport processorSupport)
+    {
+        if (instance == null)
+        {
+            return false;
+        }
+        if (instance instanceof FunctionExpression)
+        {
+            return true;
+        }
+        return (!(instance instanceof Any) || (instance instanceof AbstractCoreInstanceWrapper)) && processorSupport.instance_instanceOf(instance, M3Paths.FunctionExpression);
     }
 
     /**

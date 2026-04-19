@@ -58,7 +58,6 @@ public class M3ToJavaGenerator
 
     private static final Map<String, String> PRIMITIVES = Maps.mutable.<String, String>empty()
             .withKeyValue(ModelRepository.INTEGER_TYPE_NAME, "Long")
-            .withKeyValue(ModelRepository.INTEGER_TYPE_NAME, "Long")
             .withKeyValue(ModelRepository.FLOAT_TYPE_NAME, "Double")
             .withKeyValue(ModelRepository.DECIMAL_TYPE_NAME, "java.math.BigDecimal")
             .withKeyValue(ModelRepository.BOOLEAN_TYPE_NAME, "Boolean")
@@ -135,6 +134,11 @@ public class M3ToJavaGenerator
         this.generateTypeFactoriesById = generateTypeFactoriesById;
         this.propertyTypeResolver = propertyTypeResolver;
         this.stubDefs.putAll(additionalStubs);
+    }
+
+    public String getFactoryNamePrefix()
+    {
+        return this.factoryNamePrefix;
     }
 
     public void generate(ModelRepository repository, SetIterable<String> fileNames, String fileNameStartsWith)

@@ -29,15 +29,23 @@ import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.api.map.primitive.IntObjectMap;
 import org.eclipse.collections.api.tuple.Pair;
 import org.eclipse.collections.impl.list.fixed.ArrayAdapter;
+import org.eclipse.collections.impl.tuple.Tuples;
+import org.eclipse.collections.impl.utility.ArrayIterate;
 import org.eclipse.collections.impl.utility.Iterate;
 import org.eclipse.collections.impl.utility.LazyIterate;
 import org.finos.legend.pure.m3.bootstrap.generator.M3ToJavaGenerator;
 import org.finos.legend.pure.m3.coreinstance.BaseCoreInstance;
 import org.finos.legend.pure.m3.coreinstance.Package;
+import org.finos.legend.pure.m3.coreinstance.lazy.AbstractLazyCoreInstance;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.extension.ElementWithConstraintsAccessor;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.function.ConcreteFunctionDefinition;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.relationship.Generalization;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.relationship.GeneralizationAccessor;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.Any;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.Enum;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.Type;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.generics.GenericType;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.valuespecification.InstanceValue;
 import org.finos.legend.pure.m3.exception.PureAssertFailException;
 import org.finos.legend.pure.m3.exception.PureExecutionException;
 import org.finos.legend.pure.m3.execution.ExecutionSupport;
@@ -52,6 +60,7 @@ import org.finos.legend.pure.m4.coreinstance.CoreInstance;
 import org.finos.legend.pure.m4.coreinstance.SourceInformation;
 import org.finos.legend.pure.m4.coreinstance.compileState.CompileState;
 import org.finos.legend.pure.m4.coreinstance.primitive.date.PureDate;
+import org.finos.legend.pure.m4.coreinstance.primitive.strictTime.PureStrictTime;
 import org.finos.legend.pure.m4.exception.PureException;
 import org.finos.legend.pure.runtime.java.compiled.compiler.MemoryClassLoader;
 import org.finos.legend.pure.runtime.java.compiled.compiler.MemoryFileManager;
@@ -100,6 +109,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.StringTokenizer;
 import java.util.function.BiFunction;
 
@@ -963,7 +973,7 @@ public class CompiledSupport
         {
             return eq((Number) left, (Number) right);
         }
-        if ((left instanceof String) || (left instanceof PureDate) || (left instanceof QuantityCoreInstance))
+        if ((left instanceof Boolean) || (left instanceof String) || (left instanceof PureDate) || (left instanceof PureStrictTime) || (left instanceof QuantityCoreInstance))
         {
             return left.equals(right);
         }
@@ -999,6 +1009,10 @@ public class CompiledSupport
         return left == right;
     }
 
+    public static boolean eq_Boolean_1(boolean left, boolean right)
+    {
+        return left == right;
+    }
 
     public static boolean equal(Object left, Object right) //NOSONAR Function signature avoids confusion
     {
@@ -1061,6 +1075,10 @@ public class CompiledSupport
         if (left instanceof Number)
         {
             return (right instanceof Number) && eq((Number) left, (Number) right);
+        }
+        if (right instanceof Number)
+        {
+            return false;
         }
 
         if (left instanceof JavaCompiledCoreInstance)
@@ -1179,13 +1197,13 @@ public class CompiledSupport
         {
             return pureToString((String) instance, es);
         }
-        if (instance instanceof ReflectiveCoreInstance)
+        if (instance instanceof JavaCompiledCoreInstance)
         {
-            return ((ReflectiveCoreInstance) instance).toString(es);
+            return ((JavaCompiledCoreInstance) instance).toString(es);
         }
-        if (instance instanceof BaseCoreInstance)
+        if ((instance instanceof BaseCoreInstance) || (instance instanceof AbstractLazyCoreInstance))
         {
-            String id = ((BaseCoreInstance) instance).getName();
+            String id = ((CoreInstance) instance).getName();
             return ModelRepository.possiblyReplaceAnonymousId(id);
         }
 
@@ -1254,6 +1272,11 @@ public class CompiledSupport
         return value.toString();
     }
 
+    public static String primitiveToString(PureStrictTime value)
+    {
+        return value.toString();
+    }
+
     public static String primitiveToString(Number value)
     {
         if ((value instanceof Float) || (value instanceof Double))
@@ -1285,6 +1308,10 @@ public class CompiledSupport
         if (value instanceof PureDate)
         {
             return primitiveToString((PureDate) value);
+        }
+        if (value instanceof PureStrictTime)
+        {
+            return primitiveToString((PureStrictTime) value);
         }
         if (value instanceof String)
         {
@@ -1449,7 +1476,7 @@ public class CompiledSupport
 
         if ((left instanceof BigDecimal) || (right instanceof BigDecimal))
         {
-            return toBigDecimal(left).divide(toBigDecimal(right), RoundingMode.HALF_UP).doubleValue();
+            return divideDecimal(toBigDecimal(left), toBigDecimal(right), 16).doubleValue();
         }
 
         return left.doubleValue() / right.doubleValue();
@@ -1989,6 +2016,104 @@ public class CompiledSupport
         }
     }
 
+    //TODO extend this for all types, currently only handles precise primitives.
+    public static void validate(RichIterable<?> instances, org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.generics.GenericType type, SourceInformation si, ExecutionSupport es)
+    {
+        instances.forEach(instance -> validate(instance, type, si, es));
+    }
+
+    public static void validate(Object instance, org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.generics.GenericType type, SourceInformation si, ExecutionSupport es)
+    {
+        try
+        {
+            CoreInstance rawType = type._rawType();
+            ProcessorSupport processorSupport = ((CompiledExecutionSupport) es).getProcessorSupport();
+            boolean isExtendedPrimitive = org.finos.legend.pure.m3.navigation.type.Type.isExtendedPrimitiveType(rawType, processorSupport);
+
+            if (isExtendedPrimitive)
+            {
+                Optional<Pair<Type, RichIterable<Object>>> p = detectValidatingExtendedPrimitive(type, null);
+
+                if (!p.isPresent())
+                {
+                    return;
+                }
+
+                MutableList<Object> values = p.get().getTwo().toList();
+                values.add(instance);
+                values.add(si);
+                values.add(es);
+
+                String className = JavaPackageAndImportBuilder.buildImplClassReferenceFromType(p.get().getOne(), processorSupport);
+
+                Method method = getMethod(((CompiledExecutionSupport) es).getClassLoader().loadClass(className), "_validate");
+                method.invoke(null, values.toArray());
+            }
+        }
+        catch (InvocationTargetException e)
+        {
+            if (e.getTargetException() instanceof PureExecutionException)
+            {
+                throw (PureExecutionException) e.getTargetException();
+            }
+            else
+            {
+                throw new RuntimeException("Unexpected error validating object", e.getTargetException());
+            }
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException("Unexpected error validating object", e);
+        }
+    }
+
+    private static Optional<Pair<Type, RichIterable<Object>>> detectValidatingExtendedPrimitive(org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.generics.GenericType type, RichIterable<? extends CoreInstance> variableValues)
+    {
+        Type rawType = type._rawType();
+
+        RichIterable<? extends CoreInstance> typeVariableValues = variableValues != null ? variableValues : type._typeVariableValues();
+
+        boolean hasConstraints = rawType instanceof ElementWithConstraintsAccessor && !((ElementWithConstraintsAccessor) rawType)._constraints().isEmpty();
+
+        if (hasConstraints)
+        {
+            return Optional.of(Tuples.pair(rawType, typeVariableValues.select(v -> v instanceof InstanceValue).flatCollect(v -> (RichIterable<Object>)((InstanceValue) v)._values())));
+        }
+
+        RichIterable<? extends Generalization> generalizations = rawType._generalizations();
+        RichIterable<GenericType> general = generalizations == null ? Lists.mutable.of() : generalizations.collect(GeneralizationAccessor::_general);
+
+        if (general.isEmpty())
+        {
+            return Optional.empty();
+        }
+
+        if (general.size() > 1)
+        {
+            throw new IllegalStateException("Multiple generalizations not currently supported " + rawType);
+        }
+
+        return detectValidatingExtendedPrimitive(general.getFirst(), general.getFirst()._typeVariableValues());
+    }
+
+    public static Method getMethod(Class<?> clazz, String methodName)
+    {
+        Method[] methods = clazz.getMethods();
+        MutableList<Method> candidates = ArrayIterate.select(methods, m -> methodName.equals(m.getName()));
+
+        if (candidates.size() > 1)
+        {
+            throw new IllegalArgumentException("multiple functions found for  " + clazz.getSimpleName() + "." + methodName);
+        }
+
+        if (candidates.isEmpty())
+        {
+            throw new IllegalArgumentException("cannot find function for " + clazz.getSimpleName() + "." + methodName);
+        }
+
+        return candidates.get(0);
+    }
+
     private static String buildFunctionExecutionErrorMessage(CoreInstance functionDefinition, Object[] params, String reason, ExecutionSupport es)
     {
         StringBuilder builder = new StringBuilder("Error executing ");
@@ -2087,7 +2212,8 @@ public class CompiledSupport
     public static Type getType(Any val, MetadataAccessor metadata)
     {
         String fullSystemPath = val.getFullSystemPath();
-        return val instanceof org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.Enum ? metadata.getEnumeration(fullSystemPath) : metadata.getClass(fullSystemPath);
+        String metadataId = fullSystemPath.startsWith("Root::") ? fullSystemPath.substring(6) : fullSystemPath;
+        return val instanceof org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.type.Enum ? metadata.getEnumeration(metadataId) : metadata.getClass(metadataId);
     }
 
     private static MutableList<String> getUserObjectPathForPackageableElement(org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.PackageableElement packageableElement, boolean includeRoot)

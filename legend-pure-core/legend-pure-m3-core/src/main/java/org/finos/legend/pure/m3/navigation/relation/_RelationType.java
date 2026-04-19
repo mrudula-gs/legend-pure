@@ -24,6 +24,8 @@ import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.api.set.MutableSet;
 import org.eclipse.collections.api.tuple.Pair;
 import org.eclipse.collections.impl.tuple.Tuples;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.extension.Stereotype;
+import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.extension.TaggedValue;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.function.Function;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.function.FunctionAccessor;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.relation.Column;
@@ -178,9 +180,14 @@ public class _RelationType
         }
         return col_one.zip(col_two).injectInto(true, (a, b) ->
         {
-            CoreInstance typeOne = b.getOne().getValueForMetaPropertyToOne(M3Properties.classifierGenericType).getValueForMetaPropertyToMany(M3Properties.typeArguments).get(1).getValueForMetaPropertyToOne(M3Properties.rawType);
-            CoreInstance typeTwo = b.getTwo().getValueForMetaPropertyToOne(M3Properties.classifierGenericType).getValueForMetaPropertyToMany(M3Properties.typeArguments).get(1).getValueForMetaPropertyToOne(M3Properties.rawType);
-            return a && typeOne == typeTwo && b.getOne().getValueForMetaPropertyToOne(M3Properties.name).getName().equals(b.getTwo().getValueForMetaPropertyToOne(M3Properties.name).getName());
+            CoreInstance typeOne = Instance.getValueForMetaPropertyToOneResolved(b.getOne().getValueForMetaPropertyToOne(M3Properties.classifierGenericType).getValueForMetaPropertyToMany(M3Properties.typeArguments).get(1), M3Properties.rawType, processorSupport);
+            CoreInstance multiplicityOne = b.getOne().getValueForMetaPropertyToOne(M3Properties.classifierGenericType).getValueForMetaPropertyToMany(M3Properties.multiplicityArguments).get(0);
+            CoreInstance typeTwo = Instance.getValueForMetaPropertyToOneResolved(b.getTwo().getValueForMetaPropertyToOne(M3Properties.classifierGenericType).getValueForMetaPropertyToMany(M3Properties.typeArguments).get(1), M3Properties.rawType, processorSupport);
+            CoreInstance multiplicityTwo = b.getTwo().getValueForMetaPropertyToOne(M3Properties.classifierGenericType).getValueForMetaPropertyToMany(M3Properties.multiplicityArguments).get(0);
+            return a &&
+                    typeOne == typeTwo &&
+                    Multiplicity.multiplicitiesEqual(multiplicityOne, multiplicityTwo) &&
+                    b.getOne().getValueForMetaPropertyToOne(M3Properties.name).getName().equals(b.getTwo().getValueForMetaPropertyToOne(M3Properties.name).getName());
         });
     }
 
@@ -216,11 +223,17 @@ public class _RelationType
                             String cName = c.getOne()._nameWildCard() ? c.getTwo()._name() : c.getOne()._name();
                             GenericType a = _Column.getColumnType(c.getOne());
                             GenericType b = _Column.getColumnType(c.getTwo());
-                            Type rawTypeA = (Type)Instance.getValueForMetaPropertyToOneResolved(a, M3Properties.rawType, processorSupport);
-                            Type rawTypeB = (Type)Instance.getValueForMetaPropertyToOneResolved(b, M3Properties.rawType, processorSupport);
+                            Type rawTypeA = (Type) Instance.getValueForMetaPropertyToOneResolved(a, M3Properties.rawType, processorSupport);
+                            Type rawTypeB = (Type) Instance.getValueForMetaPropertyToOneResolved(b, M3Properties.rawType, processorSupport);
                             GenericType merged = rawTypeA == null ? b : rawTypeB == null ? a : (GenericType) org.finos.legend.pure.m3.navigation.generictype.GenericType.findBestCommonGenericType(Lists.mutable.with(a, b), isCovariant, false, genericTypeCopy.getSourceInformation(), processorSupport);
-                            org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.multiplicity.Multiplicity mergedMul = (org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.multiplicity.Multiplicity) Multiplicity.minSubsumingMultiplicity(_Column.getColumnMultiplicity(c.getOne()), _Column.getColumnMultiplicity(c.getTwo()), processorSupport);
-                            return _Column.getColumnInstance(cName, wildcard, merged, mergedMul, null, processorSupport);
+                            org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.multiplicity.Multiplicity mergedMul = rawTypeA == null ? _Column.getColumnMultiplicity(c.getTwo()) : rawTypeB == null ? _Column.getColumnMultiplicity(c.getOne()) : (org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.multiplicity.Multiplicity) Multiplicity.minSubsumingMultiplicity(_Column.getColumnMultiplicity(c.getOne()), _Column.getColumnMultiplicity(c.getTwo()), processorSupport);
+                            RichIterable<? extends Stereotype> stereotypesA = c.getOne()._stereotypes() == null ? Lists.mutable.empty() : c.getOne()._stereotypes();
+                            RichIterable<? extends Stereotype> stereotypesB = c.getTwo()._stereotypes() == null ? Lists.mutable.empty() : c.getTwo()._stereotypes();
+                            RichIterable<? extends Stereotype> mergedStereotypes = Lists.mutable.<Stereotype>withAll(stereotypesA).withAll(stereotypesB).distinct();
+                            RichIterable<? extends TaggedValue> taggedValuesA = c.getOne()._taggedValues() == null ? Lists.mutable.empty() : c.getOne()._taggedValues();
+                            RichIterable<? extends TaggedValue> taggedValuesB = c.getTwo()._taggedValues() == null ? Lists.mutable.empty() : c.getTwo()._taggedValues();
+                            RichIterable<? extends TaggedValue> mergedTaggedValues = Lists.mutable.<TaggedValue>withAll(taggedValuesA).withAll(taggedValuesB).distinctBy(TaggedValue::_tagCoreInstance);
+                            return _Column.getColumnInstance(cName, wildcard, merged, mergedMul, mergedStereotypes, mergedTaggedValues, null, processorSupport);
                         }),
                         existingGenericType.getValueForMetaPropertyToOne(M3Properties.rawType).getSourceInformation(),
                         processorSupport
@@ -232,7 +245,7 @@ public class _RelationType
     public static boolean containsExtendedPrimitiveType(CoreInstance relationType, ProcessorSupport processorSupport)
     {
         RelationType<?> rOne = RelationTypeCoreInstanceWrapper.toRelationType(relationType);
-        return rOne._columns().injectInto(false, (a,b) -> a || org.finos.legend.pure.m3.navigation.generictype.GenericType.testContainsExtendedPrimitiveTypes(_Column.getColumnType(b), processorSupport));
+        return rOne._columns().injectInto(false, (a, b) -> a || org.finos.legend.pure.m3.navigation.generictype.GenericType.testContainsExtendedPrimitiveTypes(_Column.getColumnType(b), processorSupport));
     }
 
     public static boolean isRelationTypeFullyConcrete(CoreInstance relationType, boolean checkFunctionTypes, ProcessorSupport processorSupport)
@@ -251,6 +264,8 @@ public class _RelationType
     {
         relationType.getValueForMetaPropertyToMany(M3Properties.columns).forEach(c ->
         {
+            c.getValueForMetaPropertyToMany(M3Properties.stereotypes).forEach(s -> ImportStub.withImportStubByPass(s, processorSupport));
+            c.getValueForMetaPropertyToMany(M3Properties.taggedValues).forEach(tv -> ImportStub.withImportStubByPass(tv.getValueForMetaPropertyToOne(M3Properties.tag), processorSupport));
             CoreInstance classifierGenericType = c.getValueForMetaPropertyToOne(M3Properties.classifierGenericType);
             classifierGenericType.getValueForMetaPropertyToMany(M3Properties.multiplicityArguments).forEach(arg -> ImportStub.withImportStubByPass(arg, processorSupport));
             // the first type argument of the column type is the relation type itself: we skip it to avoid infinite recursion

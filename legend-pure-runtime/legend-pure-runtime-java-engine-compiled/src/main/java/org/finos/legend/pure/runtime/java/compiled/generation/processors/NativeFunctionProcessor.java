@@ -159,7 +159,7 @@ import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives
 import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.essentials.string.trim.RTrim;
 import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.essentials.string.trim.Trim;
 import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.essentials.tests.Assert;
-import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.essentials.tests.AssetError;
+import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.essentials.tests.AssertError;
 import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.grammar._boolean.operation.And;
 import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.grammar._boolean.operation.Not;
 import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.grammar._boolean.operation.Or;
@@ -191,7 +191,6 @@ import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives
 import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.grammar.lang.cast.ToOneManyWithMessage;
 import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.grammar.lang.cast.ToOneWithMessage;
 import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.grammar.string.operation.JoinStrings;
-import org.finos.legend.pure.runtime.java.compiled.generation.processors.natives.variant.*;
 
 public class NativeFunctionProcessor
 {
@@ -545,12 +544,6 @@ public class NativeFunctionProcessor
 
         //Tests
         registerNative(map, new Assert());
-        registerNative(map, new AssetError());
-
-        //Variant
-        registerNative(map, new FromJson());
-        registerNative(map, new ToJson());
-        registerNative(map, new To());
-        registerNative(map, new ToVariant());
+        registerNative(map, new AssertError());
     }
 }

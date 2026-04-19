@@ -101,7 +101,16 @@ public class MetadataLazy implements Metadata
     @Override
     public CoreInstance getMetadata(String classifier, String id)
     {
-        return hasClassifier(classifier) ? toJavaObject(classifier, id) : null;
+        if (!hasClassifier(classifier))
+        {
+            return null;
+        }
+        // for backward compatibility
+        if (id.startsWith("Root::"))
+        {
+            id = id.substring(6);
+        }
+        return toJavaObject(classifier, this.deserializer.processId(id));
     }
 
     @Override
@@ -125,12 +134,13 @@ public class MetadataLazy implements Metadata
         }
 
         ConcurrentMutableMap<String, CoreInstance> cache = getClassifierInstanceCache(enumerationName);
-        CoreInstance result = cache.get(enumName);
+        String enumId = this.deserializer.processEnumId(enumerationName, enumName);
+        CoreInstance result = cache.get(enumId);
         if (result == null)
         {
             //might not have loaded yet, so request full load and try again:
             loadAllClassifierInstances(enumerationName);
-            result = cache.get(enumName);
+            result = cache.get(enumId);
             if (result == null)
             {
                 StringBuilder builder = new StringBuilder("Cannot find enum '").append(enumName).append("' in enumeration '").append(enumerationName).append("' unknown enum value");

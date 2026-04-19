@@ -804,7 +804,15 @@ public class ModelRepository
         {
             throw new RuntimeException("Cannot resolve empty path");
         }
-        CoreInstance node = getTopLevel(pathIterator.next());
+        String topLevel = pathIterator.next();
+        CoreInstance node = getTopLevel(topLevel);
+        if (node == null)
+        {
+            StringBuilder builder = new StringBuilder("Error resolving path ");
+            Iterate.appendString(path, builder, "[", ", ", "]: '");
+            builder.append(topLevel).append("' is not a top level element");
+            throw new RuntimeException(builder.toString());
+        }
         while (pathIterator.hasNext())
         {
             String key = pathIterator.next();
@@ -816,7 +824,12 @@ public class ModelRepository
             CoreInstance newNode = node.getValueInValueForMetaPropertyToMany(key, value);
             if (newNode == null)
             {
-                throw new RuntimeException("Error resolving path " + Iterate.makeString(path, "[", ", ", "]") + ": '" + value + "' is unknown for the key '" + key + "' in '" + node.getName() + "'");
+                StringBuilder builder = new StringBuilder("Error resolving path ");
+                Iterate.appendString(path, builder, "[", ", ", "]: '");
+                builder.append(value).append("' is unknown for the key '")
+                        .append(key).append("' in '")
+                        .append(node.getName()).append("'");
+                throw new RuntimeException(builder.toString());
             }
             node = newNode;
         }
@@ -876,7 +889,7 @@ public class ModelRepository
         this.anonymousIdCounter.set(anonymousIdCounter);
     }
 
-    private int nextId()
+    public int nextId()
     {
         return this.idCounter.getAndIncrement();
     }
@@ -886,7 +899,7 @@ public class ModelRepository
         return this.anonymousIdCounter.getAndIncrement();
     }
 
-    private String nextAnonymousInstanceName()
+    public String nextAnonymousInstanceName()
     {
         String id = Integer.toString(nextAnonymousId(), 32);
         if (id.length() >= ANONYMOUS_PADDING_LENGTH)

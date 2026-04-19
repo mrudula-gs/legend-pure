@@ -27,6 +27,7 @@ import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.api.set.MutableSet;
 import org.eclipse.collections.impl.utility.ArrayIterate;
 import org.eclipse.collections.impl.utility.Iterate;
+import org.finos.legend.pure.m3.navigation.M3Properties;
 import org.finos.legend.pure.m4.serialization.Reader;
 import org.finos.legend.pure.m4.serialization.binary.BinaryReaders;
 import org.finos.legend.pure.runtime.java.compiled.serialization.model.Obj;
@@ -74,6 +75,16 @@ public abstract class DistributedBinaryGraphDeserializer
     }
 
     protected abstract ListIterable<Obj> getInstances(String classifierId, Iterable<String> instanceIds, boolean throwIfNotFound);
+
+    public String processId(String id)
+    {
+        return DistributedMetadataHelper.possiblyHashId(id);
+    }
+
+    public String processEnumId(String enumerationName, String enumName)
+    {
+        return processId(enumerationName + "." + M3Properties.values + "['" + enumName + "']");
+    }
 
     public static void setSourceCoordinateMapProvider(SourceCoordinateMapProvider provider)
     {
@@ -455,6 +466,18 @@ public abstract class DistributedBinaryGraphDeserializer
         {
             ClassifierIndex classifierIndex = getClassifierIndex(classifierId);
             return (classifierIndex == null) ? Lists.immutable.empty() : classifierIndex.getInstanceIds();
+        }
+
+        @Override
+        public String processId(String id)
+        {
+            return (this.metadataName == null) ? id : super.processId(id);
+        }
+
+        @Override
+        public String processEnumId(String enumerationName, String enumName)
+        {
+            return (this.metadataName == null) ? processId(enumName) : super.processEnumId(enumerationName, enumName);
         }
 
         @Override

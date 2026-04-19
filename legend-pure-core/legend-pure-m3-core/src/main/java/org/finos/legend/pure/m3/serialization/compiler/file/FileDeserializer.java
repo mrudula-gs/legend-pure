@@ -17,18 +17,19 @@ package org.finos.legend.pure.m3.serialization.compiler.file;
 import org.finos.legend.pure.m3.serialization.compiler.element.ConcreteElementDeserializer;
 import org.finos.legend.pure.m3.serialization.compiler.element.DeserializedConcreteElement;
 import org.finos.legend.pure.m3.serialization.compiler.metadata.ElementBackReferenceMetadata;
+import org.finos.legend.pure.m3.serialization.compiler.metadata.ModuleBackReferenceIndex;
 import org.finos.legend.pure.m3.serialization.compiler.metadata.ModuleExternalReferenceMetadata;
+import org.finos.legend.pure.m3.serialization.compiler.metadata.ModuleFunctionNameMetadata;
 import org.finos.legend.pure.m3.serialization.compiler.metadata.ModuleManifest;
 import org.finos.legend.pure.m3.serialization.compiler.metadata.ModuleMetadataSerializer;
 import org.finos.legend.pure.m3.serialization.compiler.metadata.ModuleSourceMetadata;
-import org.finos.legend.pure.m4.serialization.Reader;
-import org.finos.legend.pure.m4.serialization.binary.BinaryReaders;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URL;
 import java.nio.file.Files;
@@ -97,9 +98,9 @@ public class FileDeserializer
         long start = System.nanoTime();
         Path filePath = this.filePathProvider.getElementFilePath(directory, elementPath, filePathVersion);
         LOGGER.debug("Deserializing {} from {}", elementPath, filePath);
-        try (Reader reader = BinaryReaders.newBinaryReader(new BufferedInputStream(Files.newInputStream(filePath))))
+        try (InputStream stream = new BufferedInputStream(Files.newInputStream(filePath)))
         {
-            return this.elementDeserializer.deserialize(reader);
+            return this.elementDeserializer.deserialize(stream);
         }
         catch (NoSuchFileException | FileNotFoundException e)
         {
@@ -183,9 +184,9 @@ public class FileDeserializer
                 throw new ElementNotFoundException(elementPath, "cannot find resource " + resourceName);
             }
             LOGGER.debug("Deserializing {} from resource '{}': {}", elementPath, resourceName, url);
-            try (Reader reader = BinaryReaders.newBinaryReader(url.openStream()))
+            try (InputStream stream = url.openStream())
             {
-                return this.elementDeserializer.deserialize(reader);
+                return this.elementDeserializer.deserialize(stream);
             }
             catch (Exception e)
             {
@@ -255,9 +256,9 @@ public class FileDeserializer
         long start = System.nanoTime();
         Path filePath = this.filePathProvider.getModuleManifestFilePath(directory, moduleName, filePathVersion);
         LOGGER.debug("Deserializing module {} manifest from {}", moduleName, filePath);
-        try (Reader reader = BinaryReaders.newBinaryReader(new BufferedInputStream(Files.newInputStream(filePath))))
+        try (InputStream stream = new BufferedInputStream(Files.newInputStream(filePath)))
         {
-            return this.moduleSerializer.deserializeManifest(reader);
+            return this.moduleSerializer.deserializeManifest(stream);
         }
         catch (NoSuchFileException | FileNotFoundException e)
         {
@@ -340,9 +341,9 @@ public class FileDeserializer
                 throw new ModuleMetadataNotFoundException(moduleName, "manifest", "cannot find resource " + resourceName);
             }
             LOGGER.debug("Deserializing module {} manifest from resource '{}': {}", moduleName, resourceName, url);
-            try (Reader reader = BinaryReaders.newBinaryReader(url.openStream()))
+            try (InputStream stream = url.openStream())
             {
-                return this.moduleSerializer.deserializeManifest(reader);
+                return this.moduleSerializer.deserializeManifest(stream);
             }
             catch (Exception e)
             {
@@ -412,9 +413,9 @@ public class FileDeserializer
         long start = System.nanoTime();
         Path filePath = this.filePathProvider.getModuleSourceMetadataFilePath(directory, moduleName, filePathVersion);
         LOGGER.debug("Deserializing module {} source metadata from {}", moduleName, filePath);
-        try (Reader reader = BinaryReaders.newBinaryReader(new BufferedInputStream(Files.newInputStream(filePath))))
+        try (InputStream stream = new BufferedInputStream(Files.newInputStream(filePath)))
         {
-            return this.moduleSerializer.deserializeSourceMetadata(reader);
+            return this.moduleSerializer.deserializeSourceMetadata(stream);
         }
         catch (NoSuchFileException | FileNotFoundException e)
         {
@@ -497,9 +498,9 @@ public class FileDeserializer
                 throw new ModuleMetadataNotFoundException(moduleName, "source metadata", "cannot find resource " + resourceName);
             }
             LOGGER.debug("Deserializing module {} source metadata from resource '{}': {}", moduleName, resourceName, url);
-            try (Reader reader = BinaryReaders.newBinaryReader(url.openStream()))
+            try (InputStream stream = url.openStream())
             {
-                return this.moduleSerializer.deserializeSourceMetadata(reader);
+                return this.moduleSerializer.deserializeSourceMetadata(stream);
             }
             catch (Exception e)
             {
@@ -569,9 +570,9 @@ public class FileDeserializer
         long start = System.nanoTime();
         Path filePath = this.filePathProvider.getModuleExternalReferenceMetadataFilePath(directory, moduleName, filePathVersion);
         LOGGER.debug("Deserializing module {} external reference metadata from {}", moduleName, filePath);
-        try (Reader reader = BinaryReaders.newBinaryReader(new BufferedInputStream(Files.newInputStream(filePath))))
+        try (InputStream stream = new BufferedInputStream(Files.newInputStream(filePath)))
         {
-            return this.moduleSerializer.deserializeExternalReferenceMetadata(reader);
+            return this.moduleSerializer.deserializeExternalReferenceMetadata(stream);
         }
         catch (NoSuchFileException | FileNotFoundException e)
         {
@@ -655,9 +656,9 @@ public class FileDeserializer
                 throw new ModuleMetadataNotFoundException(moduleName, "external reference metadata", "cannot find resource " + resourceName);
             }
             LOGGER.debug("Deserializing module {} external reference metadata from resource '{}': {}", moduleName, resourceName, url);
-            try (Reader reader = BinaryReaders.newBinaryReader(url.openStream()))
+            try (InputStream stream = url.openStream())
             {
-                return this.moduleSerializer.deserializeExternalReferenceMetadata(reader);
+                return this.moduleSerializer.deserializeExternalReferenceMetadata(stream);
             }
             catch (Exception e)
             {
@@ -711,6 +712,19 @@ public class FileDeserializer
     }
 
     /**
+     * Deserialize module element back reference metadata from a file in a directory. Returns null if the module element
+     * back reference metadata cannot be found.
+     *
+     * @param directory  directory to search for the module element back reference metadata file
+     * @param moduleName module name
+     * @return module element back reference metadata, or null if not found
+     */
+    public ElementBackReferenceMetadata deserializeModuleElementBackReferenceMetadataIfPresent(Path directory, String moduleName, String elementPath)
+    {
+        return deserializeModuleElementBackReferenceMetadataIfPresent(directory, moduleName, elementPath, this.filePathProvider.getDefaultVersion());
+    }
+
+    /**
      * Deserialize module element back reference metadata from a file in a directory using the given file path version.
      * Throws a {@link ModuleElementMetadataNotFoundException} if the module element back reference metadata cannot be
      * found.
@@ -723,6 +737,25 @@ public class FileDeserializer
      */
     public ElementBackReferenceMetadata deserializeModuleElementBackReferenceMetadata(Path directory, String moduleName, String elementPath, int filePathVersion)
     {
+        return deserializeModuleElementBackReferenceMetadata(directory, moduleName, elementPath, filePathVersion, true);
+    }
+
+    /**
+     * Deserialize module element back reference metadata from a file in a directory using the given file path version.
+     * Returns null if the module element back reference metadata cannot be found.
+     *
+     * @param directory       directory to search for the module element back reference metadata file
+     * @param moduleName      module name
+     * @param filePathVersion file path version
+     * @return module element back reference metadata, or null if not found
+     */
+    public ElementBackReferenceMetadata deserializeModuleElementBackReferenceMetadataIfPresent(Path directory, String moduleName, String elementPath, int filePathVersion)
+    {
+        return deserializeModuleElementBackReferenceMetadata(directory, moduleName, elementPath, filePathVersion, false);
+    }
+
+    private ElementBackReferenceMetadata deserializeModuleElementBackReferenceMetadata(Path directory, String moduleName, String elementPath, int filePathVersion, boolean errorIfNotFound)
+    {
         Objects.requireNonNull(directory, "directory is required");
         Objects.requireNonNull(moduleName, "module name is required");
         Objects.requireNonNull(elementPath, "element path is required");
@@ -730,14 +763,20 @@ public class FileDeserializer
         long start = System.nanoTime();
         Path filePath = this.filePathProvider.getModuleElementBackReferenceMetadataFilePath(directory, moduleName, elementPath, filePathVersion);
         LOGGER.debug("Deserializing module {} element back reference metadata from {}", moduleName, filePath);
-        try (Reader reader = BinaryReaders.newBinaryReader(new BufferedInputStream(Files.newInputStream(filePath))))
+        try (InputStream stream = new BufferedInputStream(Files.newInputStream(filePath)))
         {
-            return this.moduleSerializer.deserializeBackReferenceMetadata(reader);
+            return this.moduleSerializer.deserializeBackReferenceMetadata(stream);
         }
         catch (NoSuchFileException | FileNotFoundException e)
         {
-            LOGGER.error("Error deserializing module {} element {} back reference metadata from {}", moduleName, elementPath, filePath, e);
-            throw new ModuleElementMetadataNotFoundException(moduleName, elementPath, "cannot find file " + filePath, e);
+            if (errorIfNotFound)
+            {
+                LOGGER.error("Error deserializing module {} element {} back reference metadata from {}: file not found", moduleName, elementPath, filePath, e);
+                throw new ModuleElementMetadataNotFoundException(moduleName, elementPath, "cannot find file " + filePath, e);
+            }
+
+            LOGGER.debug("Cannot deserialize module {} element {} back reference metadata from {}: file not found", moduleName, elementPath, filePath, e);
+            return null;
         }
         catch (Exception e)
         {
@@ -791,6 +830,19 @@ public class FileDeserializer
     }
 
     /**
+     * Deserialize module element back reference metadata from a resource in a class loader. Returns null if the module
+     * element back reference metadata cannot be found.
+     *
+     * @param classLoader class loader to search for the module element back reference metadata resource
+     * @param moduleName  module name
+     * @return module element back reference metadata, or null if not found
+     */
+    public ElementBackReferenceMetadata deserializeModuleElementBackReferenceMetadataIfPresent(ClassLoader classLoader, String moduleName, String elementPath)
+    {
+        return deserializeModuleElementBackReferenceMetadataIfPresent(classLoader, moduleName, elementPath, this.filePathProvider.getDefaultVersion());
+    }
+
+    /**
      * Deserialize module element back reference metadata from a resource in a class loader using the given file path
      * version. Throws a {@link ModuleElementMetadataNotFoundException} if the module element back reference metadata
      * cannot be found.
@@ -802,6 +854,25 @@ public class FileDeserializer
      * @throws ModuleElementMetadataNotFoundException if the module element back reference metadata cannot be found
      */
     public ElementBackReferenceMetadata deserializeModuleElementBackReferenceMetadata(ClassLoader classLoader, String moduleName, String elementPath, int filePathVersion)
+    {
+        return deserializeModuleElementBackReferenceMetadata(classLoader, moduleName, elementPath, filePathVersion, true);
+    }
+
+    /**
+     * Deserialize module element back reference metadata from a resource in a class loader using the given file path
+     * version. Returns null if the module element back reference metadata cannot be found.
+     *
+     * @param classLoader     class loader to search for the module element back reference metadata resource
+     * @param moduleName      module name
+     * @param filePathVersion file path version
+     * @return module element back reference metadata, or null if not found
+     */
+    public ElementBackReferenceMetadata deserializeModuleElementBackReferenceMetadataIfPresent(ClassLoader classLoader, String moduleName, String elementPath, int filePathVersion)
+    {
+        return deserializeModuleElementBackReferenceMetadata(classLoader, moduleName, elementPath, filePathVersion, false);
+    }
+
+    private ElementBackReferenceMetadata deserializeModuleElementBackReferenceMetadata(ClassLoader classLoader, String moduleName, String elementPath, int filePathVersion, boolean errorIfNotFound)
     {
         Objects.requireNonNull(classLoader, "class loader is required");
         Objects.requireNonNull(moduleName, "module name is required");
@@ -815,12 +886,18 @@ public class FileDeserializer
             URL url = classLoader.getResource(resourceName);
             if (url == null)
             {
-                throw new ModuleElementMetadataNotFoundException(moduleName, elementPath, "cannot find resource " + resourceName);
+                if (errorIfNotFound)
+                {
+                    LOGGER.error("Error deserializing module {} element {} back reference metadata from resource {}: resource not found", moduleName, elementPath, resourceName);
+                    throw new ModuleElementMetadataNotFoundException(moduleName, elementPath, "cannot find resource " + resourceName);
+                }
+                LOGGER.debug("Cannot deserialize module {} element {} back reference metadata from resource {}: resource not found", moduleName, elementPath, resourceName);
+                return null;
             }
             LOGGER.debug("Deserializing module {} element {} back reference metadata from resource '{}': {}", moduleName, elementPath, resourceName, url);
-            try (Reader reader = BinaryReaders.newBinaryReader(url.openStream()))
+            try (InputStream stream = url.openStream())
             {
-                return this.moduleSerializer.deserializeBackReferenceMetadata(reader);
+                return this.moduleSerializer.deserializeBackReferenceMetadata(stream);
             }
             catch (Exception e)
             {
@@ -840,6 +917,275 @@ public class FileDeserializer
         {
             long end = System.nanoTime();
             LOGGER.debug("Finished deserializing module {} element {} back reference metadata from resource '{}' in {}s", moduleName, elementPath, resourceName, (end - start) / 1_000_000_000.0);
+        }
+    }
+
+
+    // Deserialize module back reference index from directory
+
+    /**
+     * Deserialize module back reference index from a file in a directory. Returns null if the index file
+     * is not found (graceful fallback for older serialized data).
+     *
+     * @param directory  directory to search for the module back reference index file
+     * @param moduleName module name
+     * @return module back reference index, or null if not found
+     */
+    public ModuleBackReferenceIndex deserializeModuleBackReferenceIndexIfPresent(Path directory, String moduleName)
+    {
+        return deserializeModuleBackReferenceIndexIfPresent(directory, moduleName, this.filePathProvider.getDefaultVersion());
+    }
+
+    public ModuleBackReferenceIndex deserializeModuleBackReferenceIndexIfPresent(Path directory, String moduleName, int filePathVersion)
+    {
+        Objects.requireNonNull(directory, "directory is required");
+        Objects.requireNonNull(moduleName, "module name is required");
+
+        long start = System.nanoTime();
+        Path filePath = this.filePathProvider.getModuleBackReferenceIndexFilePath(directory, moduleName, filePathVersion);
+        LOGGER.debug("Deserializing module {} back reference index from {}", moduleName, filePath);
+        try (InputStream stream = new BufferedInputStream(Files.newInputStream(filePath)))
+        {
+            return this.moduleSerializer.deserializeBackReferenceIndex(stream);
+        }
+        catch (NoSuchFileException | FileNotFoundException e)
+        {
+            LOGGER.debug("Module {} back reference index not found at {}, will use fallback", moduleName, filePath);
+            return null;
+        }
+        catch (Exception e)
+        {
+            LOGGER.error("Error deserializing module {} back reference index from {}", moduleName, filePath, e);
+            if (Files.notExists(filePath))
+            {
+                LOGGER.debug("Module {} back reference index not found at {}, will use fallback", moduleName, filePath);
+                return null;
+            }
+            StringBuilder builder = new StringBuilder("Error deserializing back reference index for module ").append(moduleName).append(" from ").append(filePath);
+            String eMessage = e.getMessage();
+            if (eMessage != null)
+            {
+                builder.append(": ").append(eMessage);
+            }
+            throw (e instanceof IOException) ? new UncheckedIOException(builder.toString(), (IOException) e) : new RuntimeException(builder.toString(), e);
+        }
+        finally
+        {
+            long end = System.nanoTime();
+            LOGGER.debug("Finished deserializing module {} back reference index from {} in {}s", moduleName, filePath, (end - start) / 1_000_000_000.0);
+        }
+    }
+
+    // Deserialize module back reference index from ClassLoader
+
+    /**
+     * Deserialize module back reference index from a resource in a class loader. Returns null if the index
+     * resource is not found (graceful fallback for older serialized data).
+     *
+     * @param classLoader class loader to search for the module back reference index resource
+     * @param moduleName  module name
+     * @return module back reference index, or null if not found
+     */
+    public ModuleBackReferenceIndex deserializeModuleBackReferenceIndexIfPresent(ClassLoader classLoader, String moduleName)
+    {
+        return deserializeModuleBackReferenceIndexIfPresent(classLoader, moduleName, this.filePathProvider.getDefaultVersion());
+    }
+
+    public ModuleBackReferenceIndex deserializeModuleBackReferenceIndexIfPresent(ClassLoader classLoader, String moduleName, int filePathVersion)
+    {
+        Objects.requireNonNull(classLoader, "class loader is required");
+        Objects.requireNonNull(moduleName, "module name is required");
+
+        long start = System.nanoTime();
+        String resourceName = this.filePathProvider.getModuleBackReferenceIndexResourceName(moduleName, filePathVersion);
+        LOGGER.debug("Deserializing module {} back reference index from resource '{}'", moduleName, resourceName);
+        try
+        {
+            URL url = classLoader.getResource(resourceName);
+            if (url == null)
+            {
+                LOGGER.debug("Module {} back reference index not found at resource '{}', will use fallback", moduleName, resourceName);
+                return null;
+            }
+            LOGGER.debug("Deserializing module {} back reference index from resource '{}': {}", moduleName, resourceName, url);
+            try (InputStream stream = url.openStream())
+            {
+                return this.moduleSerializer.deserializeBackReferenceIndex(stream);
+            }
+            catch (Exception e)
+            {
+                LOGGER.error("Error deserializing module {} back reference index from resource '{}'", moduleName, resourceName, e);
+                StringBuilder builder = new StringBuilder("Error deserializing back reference index for module ").append(moduleName)
+                        .append(" from resource ").append(resourceName)
+                        .append(" (").append(url).append(")");
+                String eMessage = e.getMessage();
+                if (eMessage != null)
+                {
+                    builder.append(": ").append(eMessage);
+                }
+                throw (e instanceof IOException) ? new UncheckedIOException(builder.toString(), (IOException) e) : new RuntimeException(builder.toString(), e);
+            }
+        }
+        finally
+        {
+            long end = System.nanoTime();
+            LOGGER.debug("Finished deserializing module {} back reference index from resource '{}' in {}s", moduleName, resourceName, (end - start) / 1_000_000_000.0);
+        }
+    }
+
+    // Deserialize module function name metadata from directory
+
+    public boolean moduleFunctionNameMetadataExists(Path directory, String moduleName)
+    {
+        return moduleFunctionNameMetadataExists(directory, moduleName, this.filePathProvider.getDefaultVersion());
+    }
+
+    public boolean moduleFunctionNameMetadataExists(Path directory, String moduleName, int filePathVersion)
+    {
+        Objects.requireNonNull(directory, "directory is required");
+        Objects.requireNonNull(moduleName, "module name is required");
+        return Files.exists(this.filePathProvider.getModuleFunctionNameMetadataFilePath(directory, moduleName, filePathVersion));
+    }
+
+    /**
+     * Deserialize module function name metadata from a file in a directory. Throws a
+     * {@link ModuleMetadataNotFoundException} if the module function name metadata cannot be found.
+     *
+     * @param directory  directory to search for the module function name metadata file
+     * @param moduleName module name
+     * @return module function name metadata
+     * @throws ModuleMetadataNotFoundException if the module function name metadata cannot be found
+     */
+    public ModuleFunctionNameMetadata deserializeModuleFunctionNameMetadata(Path directory, String moduleName)
+    {
+        return deserializeModuleFunctionNameMetadata(directory, moduleName, this.filePathProvider.getDefaultVersion());
+    }
+
+    /**
+     * Deserialize module function name metadata from a file in a directory using the given file path version. Throws a
+     * {@link ModuleMetadataNotFoundException} if the module function name metadata cannot be found.
+     *
+     * @param directory       directory to search for the module function name metadata file
+     * @param moduleName      module name
+     * @param filePathVersion file path version
+     * @return module function name metadata
+     * @throws ModuleMetadataNotFoundException if the module function name metadata cannot be found
+     */
+    public ModuleFunctionNameMetadata deserializeModuleFunctionNameMetadata(Path directory, String moduleName, int filePathVersion)
+    {
+        Objects.requireNonNull(directory, "directory is required");
+        Objects.requireNonNull(moduleName, "module name is required");
+
+        long start = System.nanoTime();
+        Path filePath = this.filePathProvider.getModuleFunctionNameMetadataFilePath(directory, moduleName, filePathVersion);
+        LOGGER.debug("Deserializing module {} function name metadata from {}", moduleName, filePath);
+        try (InputStream stream = new BufferedInputStream(Files.newInputStream(filePath)))
+        {
+            return this.moduleSerializer.deserializeFunctionNameMetadata(stream);
+        }
+        catch (NoSuchFileException | FileNotFoundException e)
+        {
+            LOGGER.error("Error deserializing module {} function name metadata from {}", moduleName, filePath, e);
+            throw new ModuleMetadataNotFoundException(moduleName, "source metadata", "cannot find file " + filePath, e);
+        }
+        catch (Exception e)
+        {
+            LOGGER.error("Error deserializing module {} function name metadata from {}", moduleName, filePath, e);
+            if (Files.notExists(filePath))
+            {
+                throw new ModuleMetadataNotFoundException(moduleName, "source metadata", "cannot find file " + filePath, e);
+            }
+            StringBuilder builder = new StringBuilder("Error deserializing function name metadata for module ").append(moduleName).append(" from ").append(filePath);
+            String eMessage = e.getMessage();
+            if (eMessage != null)
+            {
+                builder.append(": ").append(eMessage);
+            }
+            throw (e instanceof IOException) ? new UncheckedIOException(builder.toString(), (IOException) e) : new RuntimeException(builder.toString(), e);
+        }
+        finally
+        {
+            long end = System.nanoTime();
+            LOGGER.debug("Finished deserializing module {} function name metadata from {} in {}s", moduleName, filePath, (end - start) / 1_000_000_000.0);
+        }
+    }
+
+    // Deserialize module function name metadata from ClassLoader
+
+    public boolean moduleFunctionNameMetadataExists(ClassLoader classLoader, String moduleName)
+    {
+        return moduleFunctionNameMetadataExists(classLoader, moduleName, this.filePathProvider.getDefaultVersion());
+    }
+
+    public boolean moduleFunctionNameMetadataExists(ClassLoader classLoader, String moduleName, int filePathVersion)
+    {
+        Objects.requireNonNull(classLoader, "class loader is required");
+        Objects.requireNonNull(moduleName, "module name is required");
+        return classLoader.getResource(this.filePathProvider.getModuleFunctionNameMetadataResourceName(moduleName, filePathVersion)) != null;
+    }
+
+    /**
+     * Deserialize module function name metadata from a resource in a class loader. Throws a
+     * {@link ModuleMetadataNotFoundException} if the module function name metadata cannot be found.
+     *
+     * @param classLoader class loader to search for the module function name metadata resource
+     * @param moduleName  module name
+     * @return module function name metadata
+     * @throws ModuleMetadataNotFoundException if the module source metadata cannot be found
+     */
+    public ModuleFunctionNameMetadata deserializeModuleFunctionNameMetadata(ClassLoader classLoader, String moduleName)
+    {
+        return deserializeModuleFunctionNameMetadata(classLoader, moduleName, this.filePathProvider.getDefaultVersion());
+    }
+
+    /**
+     * Deserialize module function name metadata from a resource in a class loader using the given file path version.
+     * Throws a {@link ModuleMetadataNotFoundException} if the module function name metadata cannot be found.
+     *
+     * @param classLoader     class loader to search for the module function name metadata resource
+     * @param moduleName      module name
+     * @param filePathVersion file path version
+     * @return module function name metadata
+     * @throws ModuleMetadataNotFoundException if the module function name metadata cannot be found
+     */
+    public ModuleFunctionNameMetadata deserializeModuleFunctionNameMetadata(ClassLoader classLoader, String moduleName, int filePathVersion)
+    {
+        Objects.requireNonNull(classLoader, "class loader is required");
+        Objects.requireNonNull(moduleName, "module name is required");
+
+        long start = System.nanoTime();
+        String resourceName = this.filePathProvider.getModuleFunctionNameMetadataResourceName(moduleName, filePathVersion);
+        LOGGER.debug("Deserializing module {} function name metadata from resource '{}'", moduleName, resourceName);
+        try
+        {
+            URL url = classLoader.getResource(resourceName);
+            if (url == null)
+            {
+                throw new ModuleMetadataNotFoundException(moduleName, "function name metadata", "cannot find resource " + resourceName);
+            }
+            LOGGER.debug("Deserializing module {} function name metadata from resource '{}': {}", moduleName, resourceName, url);
+            try (InputStream stream = url.openStream())
+            {
+                return this.moduleSerializer.deserializeFunctionNameMetadata(stream);
+            }
+            catch (Exception e)
+            {
+                LOGGER.error("Error deserializing module {} function name metadata from resource '{}'", moduleName, resourceName, e);
+                StringBuilder builder = new StringBuilder("Error deserializing function name metadata for module ").append(moduleName)
+                        .append(" from resource ").append(resourceName)
+                        .append(" (").append(url).append(")");
+                String eMessage = e.getMessage();
+                if (eMessage != null)
+                {
+                    builder.append(": ").append(eMessage);
+                }
+                throw (e instanceof IOException) ? new UncheckedIOException(builder.toString(), (IOException) e) : new RuntimeException(builder.toString(), e);
+            }
+        }
+        finally
+        {
+            long end = System.nanoTime();
+            LOGGER.debug("Finished deserializing module {} function name metadata from resource '{}' in {}s", moduleName, resourceName, (end - start) / 1_000_000_000.0);
         }
     }
 
@@ -887,7 +1233,7 @@ public class FileDeserializer
         public FileDeserializer build()
         {
             Objects.requireNonNull(this.filePathProvider, "file path provider is required");
-            Objects.requireNonNull(this.elementDeserializer, "concrete element serializer is required");
+            Objects.requireNonNull(this.elementDeserializer, "concrete element deserializer is required");
             Objects.requireNonNull(this.moduleSerializer, "module serializer is required");
             return new FileDeserializer(this.filePathProvider, this.elementDeserializer, this.moduleSerializer);
         }

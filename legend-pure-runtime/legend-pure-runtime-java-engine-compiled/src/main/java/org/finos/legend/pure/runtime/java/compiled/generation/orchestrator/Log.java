@@ -16,6 +16,8 @@ package org.finos.legend.pure.runtime.java.compiled.generation.orchestrator;
 
 public interface Log
 {
+    void debug(String txt);
+
     void info(String txt);
 
     void error(String txt, Exception e);

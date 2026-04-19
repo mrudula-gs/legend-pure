@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.finos.legend.pure</groupId>
         <artifactId>legend-pure-core</artifactId>
-        <version>5.60.1-SNAPSHOT</version>
+        <version>5.81.1-SNAPSHOT</version>
     </parent>
 
     <modelVersion>4.0.0</modelVersion>
@@ -30,6 +30,10 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.finos.legend.pure</groupId>
+                <artifactId>legend-pure-maven-compiler</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.finos.legend.pure</groupId>
                 <artifactId>legend-pure-maven-generation-par</artifactId>

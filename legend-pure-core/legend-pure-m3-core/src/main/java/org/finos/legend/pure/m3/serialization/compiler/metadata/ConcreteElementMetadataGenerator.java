@@ -26,6 +26,7 @@ import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.api.set.MutableSet;
 import org.eclipse.collections.api.set.SetIterable;
 import org.eclipse.collections.impl.map.mutable.ConcurrentHashMap;
+import org.finos.legend.pure.m3.coreinstance.Package;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.Referenceable;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.extension.Annotation;
 import org.finos.legend.pure.m3.coreinstance.meta.pure.metamodel.function.Function;
@@ -39,7 +40,6 @@ import org.finos.legend.pure.m3.navigation.M3PropertyPaths;
 import org.finos.legend.pure.m3.navigation.PackageableElement.PackageableElement;
 import org.finos.legend.pure.m3.navigation.PrimitiveUtilities;
 import org.finos.legend.pure.m3.navigation.ProcessorSupport;
-import org.finos.legend.pure.m3.navigation._package._Package;
 import org.finos.legend.pure.m3.navigation.graph.GraphPath;
 import org.finos.legend.pure.m3.navigation.graph.GraphPathIterable;
 import org.finos.legend.pure.m3.navigation.graph.ResolvedGraphPath;
@@ -64,7 +64,10 @@ class ConcreteElementMetadataGenerator
     private final ReferenceIdProvider referenceIdProvider;
     private final ContainingElementIndex containingElementIndex;
     private final ProcessorSupport processorSupport;
-    private final MapIterable<String, ImmutableList<String>> backReferenceProperties = M3PropertyPaths.BACK_REFERENCE_PROPERTY_PATHS.groupByUniqueKey(ImmutableList::getLast, Maps.mutable.ofInitialCapacity(M3PropertyPaths.BACK_REFERENCE_PROPERTY_PATHS.size()));
+    private final MapIterable<String, ImmutableList<String>> backReferenceProperties = M3PropertyPaths.BACK_REFERENCE_PROPERTY_PATHS.groupByUniqueKey(
+            ImmutableList::getLast,
+            Maps.mutable.ofInitialCapacity(M3PropertyPaths.BACK_REFERENCE_PROPERTY_PATHS.size() + 1))
+            .withKeyValue(M3PropertyPaths.children.getLast(), M3PropertyPaths.children);
     private final ConcurrentMutableMap<CoreInstance, String> elementPathCache = ConcurrentHashMap.newMap();
     private final ConcurrentMutableMap<CoreInstance, BackReferenceCollector> backRefCollectorCache = ConcurrentHashMap.newMap();
 
@@ -94,6 +97,7 @@ class ConcreteElementMetadataGenerator
         {
             computeConcreteElementMetadata(builder, elementPath, concreteElement);
             computeExternalReferences(builder, elementPath, concreteElement);
+            possiblyIndexByFunctionName(builder, elementPath, concreteElement);
             return builder;
         }
         catch (Throwable t)
@@ -162,6 +166,18 @@ class ConcreteElementMetadataGenerator
         }
     }
 
+    private void possiblyIndexByFunctionName(ModuleMetadata.Builder builder, String elementPath, CoreInstance concreteElement)
+    {
+        if (isFunction(concreteElement))
+        {
+            String functionName = PrimitiveUtilities.getStringValue(concreteElement.getValueForMetaPropertyToOne(M3Properties.functionName), null);
+            if (functionName != null)
+            {
+                builder.addFunctionsByName(functionName, elementPath);
+            }
+        }
+    }
+
     private boolean isExternal(CoreInstance concreteElement, CoreInstance node)
     {
         if (concreteElement == node)
@@ -170,7 +186,7 @@ class ConcreteElementMetadataGenerator
         }
 
         SourceInformation sourceInfo = node.getSourceInformation();
-        return (sourceInfo == null) ? _Package.isPackage(node, this.processorSupport) : !concreteElement.getSourceInformation().subsumes(sourceInfo);
+        return (sourceInfo == null) ? isPackage(node) : !concreteElement.getSourceInformation().subsumes(sourceInfo);
     }
 
     private boolean isAnnotation(CoreInstance instance)
@@ -191,6 +207,11 @@ class ConcreteElementMetadataGenerator
     private boolean isFunction(CoreInstance instance)
     {
         return isInstanceOf(instance, Function.class, M3Paths.Function);
+    }
+
+    private boolean isPackage(CoreInstance instance)
+    {
+        return isInstanceOf(instance, Package.class, M3Paths.Package);
     }
 
     private boolean isReferenceable(CoreInstance instance)

@@ -14,8 +14,16 @@
 
 package org.finos.legend.pure.runtime.java.compiled.serialization.binary;
 
+import org.eclipse.collections.impl.SpreadFunctions;
+import org.finos.legend.pure.m4.coreinstance.CoreInstance;
+import org.finos.legend.pure.runtime.java.compiled.generation.processors.IdBuilder;
+
+import java.util.Objects;
+
 public class DistributedMetadataHelper
 {
+    private static final boolean HASH_IDS = Boolean.parseBoolean(System.getProperty("legend.pure.runtime.java.compiled.serialization.binary.distributed.hashids", "true"));
+
     private static final String META_DATA_DIRNAME = "metadata/";
     private static final String SPECS_DIRNAME = META_DATA_DIRNAME + "specs/";
     private static final String CLASSIFIERS_DIRNAME = META_DATA_DIRNAME + "classifiers/";
@@ -171,5 +179,56 @@ public class DistributedMetadataHelper
         return (metadataName == null) ?
                 (STRINGS_DIRNAME + "other-" + partitionId + INDEX_FILE_EXTENSION) :
                 (STRINGS_DIRNAME + metadataName + "/other-" + partitionId + INDEX_FILE_EXTENSION);
+    }
+
+    // Id hashing
+
+    public static String possiblyHashId(String id)
+    {
+        return HASH_IDS ? hashId(id) : id;
+    }
+
+    public static IdBuilder possiblyHashIds(IdBuilder idBuilder)
+    {
+        return HASH_IDS ? hashIds(idBuilder) : idBuilder;
+    }
+
+    public static String hashId(String id)
+    {
+        if (id == null)
+        {
+            return null;
+        }
+
+        // generate hash
+        long hash = 0;
+        for (int i = 0, codePoint; i < id.length(); i += Character.charCount(codePoint))
+        {
+            hash = SpreadFunctions.longSpreadOne(hash) + (codePoint = id.codePointAt(i));
+        }
+
+        // convert to base 32 string
+        return Long.toUnsignedString(hash, 32);
+    }
+
+    public static IdBuilder hashIds(IdBuilder idBuilder)
+    {
+        return (idBuilder instanceof HashingIdBuilder) ? idBuilder : new HashingIdBuilder(idBuilder);
+    }
+
+    private static class HashingIdBuilder extends IdBuilder
+    {
+        private final IdBuilder delegate;
+
+        private HashingIdBuilder(IdBuilder delegate)
+        {
+            this.delegate = Objects.requireNonNull(delegate);
+        }
+
+        @Override
+        public String buildId(CoreInstance instance)
+        {
+            return hashId(this.delegate.buildId(instance));
+        }
     }
 }

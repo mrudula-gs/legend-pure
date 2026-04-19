@@ -97,17 +97,126 @@ public class TestRelationTypeInference extends AbstractPureTestWithCoreCompiledP
     {
         compileInferenceTest(
                 "import meta::pure::metamodel::relation::*;\n" +
+                        "Primitive x::Numeric(x:Integer[1], y:Integer[1]) extends Integer\n" +
                         "Class Firm\n" +
                         "{\n" +
                         "   legalName:String[1];\n" +
+                        "   numeric:x::Numeric(1, 2)[1];\n" +
                         "}\n" +
                         "\n" +
-                        "function f():Relation<(legal:String)>[1]\n" +
+                        "function f():Relation<(legal:String, numeric:x::Numeric(1, 2))>[1]\n" +
                         "{\n" +
-                        "   Firm.all()->project(~[legal:x|$x.legalName]);\n" +
+                        "   Firm.all()->project(~[legal:x|$x.legalName, numeric:x|$x.numeric]);\n" +
                         "}\n" +
                         "\n" +
                         "native function project<Z,T>(cl:Z[*], x:FuncColSpecArray<{Z[1]->Any[*]},T>[1]):Relation<T>[1];"
+        );
+    }
+
+    @Test
+    public void testRespectPotentialEmptyRow()
+    {
+        PureCompilationException e = Assert.assertThrows(PureCompilationException.class, () -> compileInferenceTest(
+                "import meta::pure::metamodel::relation::*;\n" +
+                        "function f(x:Relation<(legal:String[1], other:Integer[0..1])>[1]):Boolean[1]\n" +
+                        "{\n" +
+                        "   $x->extend(over(), ~new:{p,w,r|$p->lag($r).legal + 'w'});\n" +
+                        "   true;\n" +
+                        "}\n" +
+                        "\n" +
+                        "native function over<T>():_Window<T>[1];" +
+                        "native function extend<T,Z,W,R>(r:Relation<T>[1], window:_Window<T>[1], f:FuncColSpec<{Relation<T>[1],_Window<T>[1],T[1]->Any[0..1]},R>[1]):Relation<T+R>[1];" +
+                        "native function lag<T>(w:Relation<T>[1],r:T[1]):T[0..1];"
+        ));
+        Assert.assertEquals("Compilation error at (resource:inferenceTest.pure line:4 column:47), \"Required multiplicity: 1, found: 0..1\"", e.getMessage());
+    }
+
+    @Test
+    public void testRespectPotentialEmptyRowWorking()
+    {
+        compileInferenceTest(
+                "import meta::pure::metamodel::relation::*;\n" +
+                        "function f(x:Relation<(legal:String[1], other:Integer[0..1])>[1]):Boolean[1]\n" +
+                        "{\n" +
+                        "   $x->extend(over(), ~new:{p,w,r|$p->lag($r).legal + 'w'});\n" +
+                        "   true;\n" +
+                        "}\n" +
+                        "\n" +
+                        "native function over<T>():_Window<T>[1];" +
+                        "native function extend<T,Z,W,R>(r:Relation<T>[1], window:_Window<T>[1], f:FuncColSpec<{Relation<T>[1],_Window<T>[1],T[1]->Any[0..1]},R>[1]):Relation<T+R>[1];" +
+                        "native function lag<T>(w:Relation<T>[1],r:T[1]):T[1];"
+        );
+    }
+
+    @Test
+    public void testColumnMultiplicityPropagationWithSelector()
+    {
+        compileInferenceTest(
+                "import meta::pure::metamodel::relation::*;\n" +
+                        "function f(p:Relation<(legal:String[1], other:Integer[0..1])>[1]):Boolean[1]\n" +
+                        "{\n" +
+                        "   $p->select(~[legal, other])->map(x|$x.legal + 'a');\n" +
+                        "   true;\n" +
+                        "}\n" +
+                        "\n" +
+                        "native function select<T,X>(x:Relation<X>[1], rel:ColSpecArray<T⊆X>[1]):Relation<T>[1];" +
+                        "native function map<T,V>(rel:Relation<T>[1], f:Function<{T[1]->V[*]}>[1]):V[*];"
+        );
+    }
+
+    @Test
+    public void testColumnMultiplicityPropagationWithSelectorWithError()
+    {
+        PureCompilationException e = Assert.assertThrows(PureCompilationException.class, () -> compileInferenceTest(
+                "import meta::pure::metamodel::relation::*;\n" +
+                        "function f(p:Relation<(legal:String[1], other:Integer[0..1])>[1]):Boolean[1]\n" +
+                        "{\n" +
+                        "   $p->select(~[legal,other])->map(x|$x.other + 1);\n" +
+                        "   true;\n" +
+                        "}\n" +
+                        "\n" +
+                        "native function select<T,X>(x:Relation<X>[1], rel:ColSpecArray<T⊆X>[1]):Relation<T>[1];" +
+                        "native function map<T,V>(rel:Relation<T>[1], f:Function<{T[1]->V[*]}>[1]):V[*];"));
+        Assert.assertEquals("Compilation error at (resource:inferenceTest.pure line:4 column:41), \"Required multiplicity: 1, found: 0..1\"", e.getMessage());
+    }
+
+    @Test
+    public void testColumnMultiplicityPropagationWithSelectorWithErrorWithDefault()
+    {
+        PureCompilationException e = Assert.assertThrows(PureCompilationException.class, () -> compileInferenceTest(
+                "import meta::pure::metamodel::relation::*;\n" +
+                        "function f(p:Relation<(legal:String[1], other:Integer)>[1]):Boolean[1]\n" +
+                        "{\n" +
+                        "   $p->select(~[legal,other])->map(x|$x.other + 1);\n" +
+                        "   true;\n" +
+                        "}\n" +
+                        "\n" +
+                        "native function select<T,X>(x:Relation<X>[1], rel:ColSpecArray<T⊆X>[1]):Relation<T>[1];" +
+                        "native function map<T,V>(rel:Relation<T>[1], f:Function<{T[1]->V[*]}>[1]):V[*];"));
+        Assert.assertEquals("Compilation error at (resource:inferenceTest.pure line:4 column:41), \"Required multiplicity: 1, found: 0..1\"", e.getMessage());
+    }
+
+    @Test
+    public void testColumnFunctionCollectionInference2()
+    {
+        compileInferenceTest(
+                "import meta::pure::metamodel::relation::*;\n" +
+                        "Primitive x::Numeric(x:Integer[1], y:Integer[1]) extends Integer\n" +
+                        "Class Firm\n" +
+                        "{\n" +
+                        "   legalName:String[1];\n" +
+                        "   numeric:x::Numeric(1, 2)[1];\n" +
+                        "}\n" +
+                        "\n" +
+                        "function f():Relation<(numeric:x::Numeric(1, 2))>[1]\n" +
+                        "{\n" +
+                        "   Firm.all()->project(~[legal:x|$x.legalName, numeric:x|$x.numeric])->groupBy(~[legal], ~[sum:x|$x.numeric : y|$y->sum()])->project(~[numeric:x|$x.sum]);\n" +
+                        "}\n" +
+                        "\n" +
+                        "native function project<Z,T>(cl:Z[*], x:FuncColSpecArray<{Z[1]->Any[*]},T>[1]):Relation<T>[1];\n" +
+                        "native function groupBy<T,Z,K,V,R>(r:Relation<T>[1], cols:ColSpecArray<Z⊆T>[1], agg:AggColSpecArray<{T[1]->K[0..1]},{K[*]->V[0..1]}, R>[1]):Relation<Z+R>[1];\n" +
+                        "native function sum(values:Integer[*]):x::Numeric(1, 2)[1];\n" +
+                        "native function project<T,Z>(r:Relation<T>[1], fs:FuncColSpecArray<{T[1]->Any[*]},Z>[1]):Relation<Z>[1];"
         );
     }
 
@@ -141,7 +250,7 @@ public class TestRelationTypeInference extends AbstractPureTestWithCoreCompiledP
                         "\n"
         );
     }
-    
+
     @Ignore
     @Test
     public void testColumnFunctionCollectionInference4() // Stackoverflow
@@ -169,7 +278,7 @@ public class TestRelationTypeInference extends AbstractPureTestWithCoreCompiledP
                         "\n"
         );
     }
-    
+
     @Test
     public void testColumnFunctionCollectionChainedWithNewFunctionInference()
     {
@@ -327,7 +436,7 @@ public class TestRelationTypeInference extends AbstractPureTestWithCoreCompiledP
                         "native function diff<Z,T>(x:Relation<T>[1], k:Relation<Z>[1]):Relation<T-Z>[1];\n" +
                         "native function project<Z,T>(cl:Z[*], x:FuncColSpecArray<{Z[1]->Any[*]},T>[1]):Relation<T>[1];\n"
         ));
-        Assert.assertEquals("Compilation error at (resource:inferenceTest.pure line:10 column:135), \"The system can't find the column legal3 in the Relation (legal:String)\"", e.getMessage());
+        Assert.assertEquals("Compilation error at (resource:inferenceTest.pure line:10 column:135), \"The system can't find the column legal3 in the Relation (legal:String[1])\"", e.getMessage());
     }
 
     @Test
@@ -755,6 +864,25 @@ public class TestRelationTypeInference extends AbstractPureTestWithCoreCompiledP
     }
 
     @Test
+    public void testFunctionExpressionSortAfterExtend()
+    {
+        compileInferenceTest(
+                "import meta::pure::metamodel::relation::*;" +
+                        "import meta::pure::metamodel::variant::*;" +
+                        "function meta::pure::functions::relation::descending<T>(column:ColSpec<T>[1]):SortInfo<T>[1]\n" +
+                        "{\n" +
+                        "   ^SortInfo<T>(column=$column, direction=SortType.DESC)\n" +
+                        "}\n" +
+                        "function f(t:Relation<(value:Integer, name:Variant)>[1]):Relation<Any>[1]\n" +
+                        "{\n" +
+                        "    $t->extend(~ok:x|$x.name)->sort(descending(~ok));\n" +
+                        "}" +
+                        "native function sort<X,T>(rel:Relation<T>[1], sortInfo:SortInfo<X⊆T>[*]):Relation<T>[1];\n" +
+                        "native function extend<T,Z>(r:Relation<T>[1], f:FuncColSpec<{T[1]->Any[0..1]},Z>[1]):Relation<T+Z>[1];\n" +
+                        "native function get(variant: Variant[0..1], key: String[1]): Variant[0..1];");
+    }
+
+    @Test
     public void testDistinctError()
     {
         compileInferenceTest(
@@ -828,22 +956,22 @@ public class TestRelationTypeInference extends AbstractPureTestWithCoreCompiledP
     public void testRelationTypeInferenceIntegrityWithSelect()
     {
         String functionSource = "import meta::pure::metamodel::relation::*;" +
-                                "function f(t:Relation<(value:Integer,str:String)>[1]):Relation<Any>[1]\n" +
-                                "{\n" +
-                                "    $t->select(~[value, str])\n" +
-                                "}";
+                "function f(t:Relation<(value:Integer,str:String)>[1]):Relation<Any>[1]\n" +
+                "{\n" +
+                "    $t->select(~[value, str])\n" +
+                "}";
         String nativeFunctionSource = "import meta::pure::metamodel::relation::*;" +
-                                      "native function select<T,X>(x:Relation<X>[1], rel:ColSpecArray<T⊆X>[1]):Relation<T>[1];";
-        
+                "native function select<T,X>(x:Relation<X>[1], rel:ColSpecArray<T⊆X>[1]):Relation<T>[1];";
+
         ImmutableMap<String, String> sources = Maps.immutable.of("1.pure", functionSource, "2.pure", nativeFunctionSource);
-        
+
         new RuntimeTestScriptBuilder().createInMemorySources(sources).compile().run(runtime, functionExecution);
 
         RuntimeVerifier.deleteCompileAndReloadMultipleTimesIsStable(
-            runtime, 
-            functionExecution,
-            Lists.fixedSize.of(Tuples.pair("2.pure", nativeFunctionSource)), 
-            this.getAdditionalVerifiers()
+                runtime,
+                functionExecution,
+                Lists.fixedSize.of(Tuples.pair("2.pure", nativeFunctionSource)),
+                this.getAdditionalVerifiers()
         );
     }
 

@@ -18,14 +18,14 @@ import org.eclipse.collections.api.list.primitive.MutableIntList;
 import org.eclipse.collections.api.map.primitive.MutableIntObjectMap;
 import org.eclipse.collections.impl.factory.primitive.IntLists;
 import org.eclipse.collections.impl.factory.primitive.IntObjectMaps;
-import org.finos.legend.pure.m4.serialization.Reader;
-import org.finos.legend.pure.m4.serialization.Writer;
-import org.finos.legend.pure.m4.serialization.binary.BinaryReaders;
-import org.finos.legend.pure.m4.serialization.binary.BinaryWriters;
+import org.eclipse.collections.impl.utility.LazyIterate;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ServiceLoader;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -67,13 +67,23 @@ public abstract class AbstractTestModuleMetadataSerializerExtension extends Abst
     @Test
     public void testEmptyModule()
     {
-        testModuleMetadataSerializes(ModuleMetadata.builder("empty_module").withReferenceIdVersion(1).build());
+        testModuleMetadataSerializes(getEmptyModuleMetadata());
+    }
+
+    protected ModuleMetadata getEmptyModuleMetadata()
+    {
+        return ModuleMetadata.builder("empty_module").withReferenceIdVersion(1).build();
     }
 
     @Test
     public void testSimpleModuleWithOneSource()
     {
-        testModuleMetadataSerializes(ModuleMetadata.builder("simple_module")
+        testModuleMetadataSerializes(getSimpleModuleWithOneSource());
+    }
+
+    protected ModuleMetadata getSimpleModuleWithOneSource()
+    {
+        return ModuleMetadata.builder("simple_module")
                 .withReferenceIdVersion(1)
                 .withElements(
                         newClass("model::classes::MySimpleClass", "/simple_module/model/classes.pure", 1, 1, 5, 1),
@@ -86,13 +96,20 @@ public abstract class AbstractTestModuleMetadataSerializerExtension extends Abst
                         "model::classes::MySimpleClass",
                         "model::classes::MyOtherClass.properties['simple'].classifierGenericType.typeArguments[1]",
                         refUsage("model::classes::MyOtherClass.properties['simple'].classifierGenericType.typeArguments[1]", "rawType", 0, "/simple_module/model/classes.pure", 7, 7, 7, 19))
-                .build());
+                .withFunctionsByName("simpleFunc", "model::classes::simpleFunc_MySimpleClass_1__MyOtherClass_1_", "model::classes::simpleFunc_MySimpleClass_0_1__MyOtherClass_0_1_")
+                .withFunctionByName("otherFunc", "model::classes::otherFunc_MySimpleClass_MANY__MyOtherClass_MANY_")
+                .build();
     }
 
     @Test
     public void testSimpleModuleWithMultipleSources()
     {
-        testModuleMetadataSerializes(ModuleMetadata.builder("multi_source_module")
+        testModuleMetadataSerializes(getSimpleModuleWithMultipleSources());
+    }
+
+    protected ModuleMetadata getSimpleModuleWithMultipleSources()
+    {
+        return ModuleMetadata.builder("multi_source_module")
                 .withReferenceIdVersion(1)
                 .withElements(
                         newClass("model::classes::MySimpleClass",
@@ -173,26 +190,55 @@ public abstract class AbstractTestModuleMetadataSerializerExtension extends Abst
                         "model::classes::MyThirdClass",
                         "model::associations::OtherToThird.properties['toThird'].classifierGenericType.typeArguments[1]",
                         refUsage("model::associations::OtherToThird.properties['toThird'].classifierGenericType.typeArguments[1]", "rawType"))
-                .build());
+                .withFunctionsByName("simpleFunc", "model::classes::simpleFunc_MySimpleClass_1__MyOtherClass_1_", "model::classes::simpleFunc_MySimpleClass_0_1__MyOtherClass_0_1_")
+                .withFunctionByName("otherFunc", "model::classes::otherFunc_MySimpleClass_MANY__MyOtherClass_MANY_")
+                .withFunctionsByName("firstType", "model::enums::firstType_String_1__MyFirstEnumeration_1_", "model::enums::firstType_String_0_1__MyFirstEnumeration_0_1_")
+                .withFunctionsByName("secondType", "model::enums::secondType_String_1__MySecondEnumeration_1_", "model::enums::secondType_String_0_1__MySecondEnumeration_0_1_")
+                .build();
+    }
+
+    @Test
+    public void testSimpleModuleWithDependencies()
+    {
+        testModuleMetadataSerializes(getSimpleModuleWithDependencies());
+    }
+
+    protected ModuleMetadata getSimpleModuleWithDependencies()
+    {
+        return ModuleMetadata.builder("dependent_module")
+                .withReferenceIdVersion(1)
+                .withDependencies("platform", "other_module")
+                .withElements(
+                        newClass("model::classes::MySimpleClass", "/dependent_module/model/classes.pure", 1, 1, 5, 1))
+                .withSource(newSource("/dependent_module/model/classes.pure",
+                        newSourceSection("Pure", "model::classes::MySimpleClass")))
+                .withExternalReferences("model::classes::MySimpleClass", "model::classes::MyOtherClass.properties['simple'].classifierGenericType.typeArguments[1]")
+                .build();
     }
 
     protected abstract ModuleMetadataSerializerExtension getExtension();
 
     protected void testModuleMetadataSerializes(ModuleMetadata metadata)
     {
-        testSerializes(metadata.getManifest(), this.serializer::serializeManifest, this.serializer::deserializeManifest);
-        testSerializes(metadata.getSourceMetadata(), this.serializer::serializeSourceMetadata, this.serializer::deserializeSourceMetadata);
-        testSerializes(metadata.getExternalReferenceMetadata(), this.serializer::serializeExternalReferenceMetadata, this.serializer::deserializeExternalReferenceMetadata);
-        metadata.getBackReferenceMetadata()
-                .getBackReferences()
-                .forEach(br -> testSerializes(br, this.serializer::serializeBackReferenceMetadata, this.serializer::deserializeBackReferenceMetadata));
+        testModuleMetadataSerializes(metadata, metadata);
     }
 
-    private <M> void testSerializes(M metadata, BiConsumer<Writer, M> serializer, Function<Reader, M> deserializer)
+    protected void testModuleMetadataSerializes(ModuleMetadata expectedResult, ModuleMetadata metadata)
+    {
+        testSerializes(expectedResult.getManifest(), metadata.getManifest(), this.serializer::serializeManifest, this.serializer::deserializeManifest);
+        testSerializes(expectedResult.getSourceMetadata(), metadata.getSourceMetadata(), this.serializer::serializeSourceMetadata, this.serializer::deserializeSourceMetadata);
+        testSerializes(expectedResult.getExternalReferenceMetadata(), metadata.getExternalReferenceMetadata(), this.serializer::serializeExternalReferenceMetadata, this.serializer::deserializeExternalReferenceMetadata);
+        Assert.assertEquals(expectedResult.getBackReferenceMetadata().getBackReferences().size(), metadata.getBackReferenceMetadata().getBackReferences().size());
+        LazyIterate.zip(expectedResult.getBackReferenceMetadata().getBackReferences(), metadata.getBackReferenceMetadata().getBackReferences())
+                        .forEach(p -> testSerializes(p.getOne(), p.getTwo(), this.serializer::serializeBackReferenceMetadata, this.serializer::deserializeBackReferenceMetadata));
+        testSerializes(expectedResult.getFunctionNameMetadata(), metadata.getFunctionNameMetadata(), this.serializer::serializeFunctionNameMetadata, this.serializer::deserializeFunctionNameMetadata);
+    }
+
+    private <M> void testSerializes(M expectedResult, M metadata, BiConsumer<OutputStream, M> serializer, Function<InputStream, M> deserializer)
     {
         byte[] bytes = serialize(serializer, metadata);
         M deserialized = deserialize(deserializer, bytes);
-        Assert.assertEquals(metadata, deserialized);
+        Assert.assertEquals(expectedResult, deserialized);
 
         byte[] bytes2 = serialize(serializer, metadata);
         Assert.assertArrayEquals("serialization instability for version " + this.extension.version() + " (" + this.extension.getClass().getName() + ")", bytes, bytes2);
@@ -201,18 +247,15 @@ public abstract class AbstractTestModuleMetadataSerializerExtension extends Abst
         Assert.assertArrayEquals("serialization instability for version " + this.extension.version() + " (" + this.extension.getClass().getName() + ")", bytes, bytes3);
     }
 
-    private <M> byte[] serialize(BiConsumer<Writer, M> serializer, M metadata)
+    private <M> byte[] serialize(BiConsumer<OutputStream, M> serializer, M metadata)
     {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        serializer.accept(BinaryWriters.newBinaryWriter(bytes), metadata);
+        serializer.accept(bytes, metadata);
         return bytes.toByteArray();
     }
 
-    private <M> M deserialize(Function<Reader, M> deserializer, byte[] bytes)
+    private <M> M deserialize(Function<InputStream, M> deserializer, byte[] bytes)
     {
-        try (Reader reader = BinaryReaders.newBinaryReader(bytes))
-        {
-            return deserializer.apply(reader);
-        }
+        return deserializer.apply(new ByteArrayInputStream(bytes));
     }
 }
